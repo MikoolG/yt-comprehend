@@ -1,0 +1,47 @@
+# YT-Comprehend Configuration
+
+# Default tier to use (1, 2, or 3)
+# 1 = Captions only (fastest)
+# 2 = Audio transcription with Whisper
+# 3 = Full visual analysis
+default_tier: 1
+
+# Auto-escalate to next tier if current tier fails
+auto_escalate: true
+
+# Whisper settings (Tier 2)
+whisper:
+  model: "medium"           # tiny, small, medium, large-v3, large-v3-turbo
+  device: "auto"            # auto, cpu, cuda
+  compute_type: "int8"      # int8, float16, float32 (int8 best for CPU)
+  beam_size: 5
+  language: null            # null for auto-detect, or "en", "es", etc.
+  
+# Visual analysis settings (Tier 3)
+visual:
+  scene_threshold: 3.0      # Lower = more sensitive scene detection
+  ocr_engine: "paddleocr"   # paddleocr, tesseract
+  min_scene_duration: 2.0   # Minimum seconds between scene changes
+  extract_every_n_seconds: null  # Override scene detection with fixed interval
+  deduplicate: true         # Remove near-duplicate frames
+  dedup_threshold: 0.95     # Similarity threshold for deduplication
+  max_frames: 100           # Maximum frames to process per video
+  
+# Output settings
+output:
+  directory: "./output"
+  format: "markdown"        # markdown, json, plain
+  include_timestamps: true
+  timestamp_interval: 30    # Group text by N-second intervals
+  include_metadata: true    # Include video title, duration, etc.
+
+# Cleanup
+cleanup:
+  delete_temp_files: true
+  keep_audio: false         # Keep downloaded audio after transcription
+  keep_frames: false        # Keep extracted frames after OCR
+
+# Paths
+paths:
+  temp_dir: "./temp"
+  models_dir: null          # null = use default cache location

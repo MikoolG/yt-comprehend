@@ -1,0 +1,23 @@
+# YT-Comprehend Dependencies
+
+# Core - Tier 1 & 2
+youtube-transcript-api>=0.6.2
+yt-dlp>=2024.12.1
+faster-whisper>=1.0.0
+
+# CLI and Output
+click>=8.1.0
+rich>=13.0.0
+
+# Configuration
+pyyaml>=6.0
+
+# Utilities
+validators>=0.22.0
+
+# Tier 3 - Visual Analysis (uncomment when ready)
+# scenedetect[opencv]>=0.6.4
+# paddlepaddle>=2.6.0
+# paddleocr>=2.7.0
+# imagededup>=0.3.2
+# pillow>=10.0.0
