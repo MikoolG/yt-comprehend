@@ -83,7 +83,7 @@ def _format_time(seconds: float) -> str:
 
 class AudioExtractor:
     """Download audio and transcribe with faster-whisper."""
-    
+
     def __init__(
         self,
         model_name: str = "medium",
@@ -91,17 +91,19 @@ class AudioExtractor:
         compute_type: str = "int8",
         beam_size: int = 5,
         language: str | None = None,
+        initial_prompt: str | None = None,
         temp_dir: str | Path | None = None,
     ):
         """
         Initialize the audio extractor.
-        
+
         Args:
             model_name: Whisper model (tiny, small, medium, large-v3, large-v3-turbo)
             device: Device to use (auto, cpu, cuda)
             compute_type: Quantization type (int8, float16, float32)
             beam_size: Beam size for decoding
             language: Force specific language or None for auto-detect
+            initial_prompt: Optional text to guide Whisper's style/vocabulary
             temp_dir: Directory for temporary files
         """
         self.model_name = model_name
@@ -109,8 +111,9 @@ class AudioExtractor:
         self.compute_type = compute_type
         self.beam_size = beam_size
         self.language = language
+        self.initial_prompt = initial_prompt
         self.temp_dir = Path(temp_dir) if temp_dir else None
-        
+
         self._model: WhisperModel | None = None
     
     @property
@@ -205,6 +208,7 @@ class AudioExtractor:
             str(audio_path),
             beam_size=self.beam_size,
             language=self.language,
+            initial_prompt=self.initial_prompt,
             word_timestamps=True,
             vad_filter=True,  # Filter out non-speech
         )

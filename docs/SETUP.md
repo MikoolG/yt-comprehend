@@ -173,7 +173,7 @@ cleanup:
 cd ~/projects/yt-comprehend
 source venv/bin/activate
 
-# Basic usage - auto-selects best available tier
+# Basic usage - auto-selects best tier, saves to output/
 yt-comprehend "https://youtube.com/watch?v=VIDEO_ID"
 
 # Force specific tier
@@ -182,7 +182,9 @@ yt-comprehend "https://youtube.com/watch?v=VIDEO_ID" --tier 2  # Audio transcrip
 yt-comprehend "https://youtube.com/watch?v=VIDEO_ID" --tier 3  # Full visual analysis
 
 # Output options
-yt-comprehend URL --output ./my-transcript.md
+yt-comprehend URL --no-save           # Print to stdout only, don't save to file
+yt-comprehend URL --quiet             # Save only, suppress stdout output
+yt-comprehend URL -o ./my-transcript.md  # Save to specific file
 yt-comprehend URL --format json
 yt-comprehend URL --no-timestamps
 
@@ -190,7 +192,26 @@ yt-comprehend URL --no-timestamps
 yt-comprehend URL --tier 2 --model large-v3-turbo --device cuda
 
 # Copy to clipboard (requires xclip)
-yt-comprehend URL | xclip -selection clipboard
+yt-comprehend URL --no-save | xclip -selection clipboard
+```
+
+### Output Structure
+
+By default, transcripts are saved to the output directory organized by tier:
+
+```
+output/
+├── tier1-captions/
+│   ├── transcripts/    # Raw transcripts with timestamps
+│   │   └── video-title.md
+│   └── summaries/      # Claude Code generated summaries
+│       └── video-title.md
+├── tier2-whisper/
+│   ├── transcripts/
+│   └── summaries/
+└── tier3-visual/
+    ├── transcripts/
+    └── summaries/
 ```
 
 ### Python API Usage
@@ -301,13 +322,27 @@ pip uninstall opencv-python opencv-python-headless
 pip install opencv-python-headless
 ```
 
-## Integration with Claude
+## Integration with Claude Code
 
-The primary use case is extracting video content for Claude to analyze. Recommended workflow:
+The primary use case is extracting video content for Claude Code to analyze and summarize. Recommended workflow:
 
-1. Run `yt-comprehend URL` to get transcript
-2. Copy output (or use `| xclip -selection clipboard`)
-3. Paste into Claude conversation with your question
+### Workflow
+
+1. **Extract transcript**: Run `yt-comprehend URL --tier 1` (or tier 2 for better accuracy)
+2. **Transcript saved**: Automatically saved to `output/<tier>/transcripts/<video-name>.md`
+3. **Claude Code analyzes**: Read the transcript and generate a comprehensive summary
+4. **Summary saved**: Save to `output/<tier>/summaries/<video-name>.md`
+
+### Summary Contents
+
+Claude Code generates summaries including:
+- Overview (what the video is about, target audience)
+- Key points and takeaways
+- Detailed breakdown by topic/section
+- Notable mentions (tools, people, resources)
+- Final summary
+
+### Timestamp References
 
 For longer videos, the tool segments output by timestamp intervals, making it easy to reference specific sections:
 

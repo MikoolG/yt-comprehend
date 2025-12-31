@@ -16,6 +16,7 @@ whisper:
   compute_type: "int8"      # int8, float16, float32 (int8 best for CPU)
   beam_size: 5
   language: null            # null for auto-detect, or "en", "es", etc.
+  initial_prompt: null      # Optional prompt to guide vocabulary/style
   
 # Visual analysis settings (Tier 3)
 visual:

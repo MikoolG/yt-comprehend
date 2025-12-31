@@ -21,6 +21,7 @@ class VideoMetadata:
     language: str
     duration: float | None = None
     has_visual_content: bool = False
+    is_auto_generated: bool | None = None  # True=auto-captions, False=manual, None=unknown/Whisper
 
 
 @dataclass
@@ -41,14 +42,27 @@ class ComprehendResult:
     
     def to_markdown(self, include_timestamps: bool = True, timestamp_interval: int = 30) -> str:
         """Format result as markdown for LLM consumption."""
+        # Determine source description
+        if self.metadata.tier_used == 1:
+            if self.metadata.is_auto_generated:
+                source_desc = "YouTube Auto-Captions"
+            elif self.metadata.is_auto_generated is False:
+                source_desc = "YouTube Manual Captions"
+            else:
+                source_desc = "YouTube Captions"
+        elif self.metadata.tier_used == 2:
+            source_desc = "Whisper Transcription"
+        else:
+            source_desc = "Whisper + Visual Analysis"
+
         lines = [
             f"# Video Analysis",
             f"",
             f"**Source:** {self.metadata.url}",
-            f"**Analysis Tier:** {self.metadata.tier_used}",
+            f"**Method:** {source_desc}",
             f"**Language:** {self.metadata.language}",
         ]
-        
+
         if self.metadata.duration:
             minutes = int(self.metadata.duration // 60)
             seconds = int(self.metadata.duration % 60)
@@ -189,6 +203,7 @@ class VideoComprehend:
                 compute_type=whisper_config.get("compute_type", "int8"),
                 beam_size=whisper_config.get("beam_size", 5),
                 language=whisper_config.get("language"),
+                initial_prompt=whisper_config.get("initial_prompt"),
             )
         return self._audio_extractor
     
@@ -244,13 +259,14 @@ class VideoComprehend:
                     progress_callback("Trying caption extraction...")
                 
                 result = self.caption_extractor.extract(url)
-                
+
                 return ComprehendResult(
                     metadata=VideoMetadata(
                         url=url,
                         video_id=video_id,
                         tier_used=1,
                         language=result.language,
+                        is_auto_generated=result.is_generated,
                     ),
                     transcript_text=result.text,
                     transcript_segments=result.segments,

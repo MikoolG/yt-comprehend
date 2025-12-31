@@ -18,6 +18,35 @@ from src.extractors.audio import AudioExtractionError
 console = Console()
 
 
+def _get_safe_filename(video_id: str) -> str:
+    """Get video title and convert to safe filename."""
+    import re
+    import subprocess
+
+    try:
+        # Use yt-dlp to get video title
+        result = subprocess.run(
+            ["yt-dlp", "--get-title", "--no-playlist", f"https://youtube.com/watch?v={video_id}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            title = result.stdout.strip()
+            # Convert to safe filename: lowercase, replace spaces/special chars with hyphens
+            safe = re.sub(r'[^\w\s-]', '', title.lower())
+            safe = re.sub(r'[-\s]+', '-', safe).strip('-')
+            # Limit length
+            if len(safe) > 60:
+                safe = safe[:60].rsplit('-', 1)[0]
+            return safe
+    except Exception:
+        pass
+
+    # Fallback to video ID
+    return video_id
+
+
 def progress_callback(message: str):
     """Print progress messages."""
     console.print(f"[dim]→ {message}[/dim]", highlight=False)
@@ -49,10 +78,21 @@ def progress_callback(message: str):
     help="Device for Whisper inference"
 )
 @click.option(
+    "--prompt", "-p",
+    default=None,
+    help="Initial prompt to guide Whisper vocabulary (e.g., 'Claude Code, Anthropic, API')"
+)
+@click.option(
     "--output", "-o",
     type=click.Path(),
     default=None,
-    help="Output file path (default: stdout)"
+    help="Output file path (overrides default output location)"
+)
+@click.option(
+    "--no-save",
+    is_flag=True,
+    default=False,
+    help="Don't save to file, only print to stdout"
 )
 @click.option(
     "--format", "-f",
@@ -91,7 +131,9 @@ def main(
     no_escalate: bool,
     model: str | None,
     device: str | None,
+    prompt: str | None,
     output: str | None,
+    no_save: bool,
     output_format: str,
     no_timestamps: bool,
     interval: int,
@@ -128,6 +170,8 @@ def main(
         vc.config["whisper"]["model"] = model
     if device:
         vc.config["whisper"]["device"] = device
+    if prompt:
+        vc.config["whisper"]["initial_prompt"] = prompt
     
     # Progress callback
     callback = None if quiet else progress_callback
@@ -177,14 +221,42 @@ def main(
                 timestamp_interval=interval,
             )
         
-        # Output
+        # Determine output path (save by default unless --no-save)
+        output_path = None
         if output:
             output_path = Path(output)
+        elif not no_save:
+            # Auto-generate path based on tier
+            tier_dirs = {
+                1: "tier1-captions",
+                2: "tier2-whisper",
+                3: "tier3-visual",
+            }
+            tier_dir = tier_dirs.get(result.metadata.tier_used, "tier1-captions")
+
+            # Use output directory from config, or default
+            output_base = Path(vc.config.get("output", {}).get("directory", "./output"))
+            if not output_base.is_absolute():
+                output_base = Path(__file__).parent.parent / output_base
+            output_base.mkdir(parents=True, exist_ok=True)
+
+            # Create tier subdirectories
+            transcript_dir = output_base / tier_dir / "transcripts"
+            transcript_dir.mkdir(parents=True, exist_ok=True)
+
+            # Get video title for filename
+            filename = _get_safe_filename(result.metadata.video_id)
+            ext = {"json": ".json", "plain": ".txt", "markdown": ".md"}.get(output_format, ".md")
+            output_path = transcript_dir / f"{filename}{ext}"
+
+        # Output: save to file if path set, always print to stdout unless quiet
+        if output_path:
             output_path.write_text(output_text)
             if not quiet:
                 console.print(f"[dim]Saved to:[/dim] {output_path}")
-        else:
-            # Print to stdout (without rich formatting for piping)
+
+        # Print to stdout (unless quiet or explicit -o file specified)
+        if not quiet and not output:
             print(output_text)
     
     except CaptionExtractionError as e:
