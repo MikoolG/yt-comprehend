@@ -54,6 +54,62 @@ output/
 2. **Generate summary**: Claude Code reads the transcript and creates a comprehensive summary
 3. **Both saved**: Transcripts and summaries are saved to respective folders
 
+## Desktop UI
+
+A graphical interface built with Electron for a streamlined workflow.
+
+### Quick Start
+
+```bash
+cd electron
+npm install
+npm run dev      # Development mode with hot reload
+npm run build    # Production build
+```
+
+### Tech Stack
+
+- **Framework**: Electron 33+ with electron-vite
+- **Frontend**: React 18 + TypeScript + Tailwind CSS
+- **Editor**: Monaco Editor (VS Code's editor)
+- **Terminal**: xterm.js with node-pty
+- **State**: Zustand
+- **Layout**: react-resizable-panels
+
+### Features
+
+- **Video URL input** with paste button and tier selection dropdown
+- **Progress bar** showing real-time extraction status via JSON events
+- **File browser** for output transcripts and summaries (auto-refreshes)
+- **Monaco Editor** for viewing and editing markdown files with syntax highlighting
+- **Embedded terminal** with venv activated for running Claude CLI
+- **Resizable panels** - drag to resize editor and terminal areas
+- **Right-click context menu** for cut/copy/paste
+
+### Keyboard Shortcuts
+
+- `Ctrl+Enter`: Execute transcript generation
+- `Ctrl+S`: Save current file in editor
+
+### Screenshot
+
+```
++----------------------------------------------------------+
+| [URL: ________________] [📋] [Tier: v] [Execute] [⚙️]     |
++----------------------------------------------------------+
+| [████████████░░░░░░░░] Transcribing with Whisper... 60%  |
++------------+---------------------------------------------+
+| output/    |  # Video Analysis                          |
+|  tier1-    |                                             |
+|   trans/   |  **Source:** https://youtube.com/...       |
+|   summa/   |  **Method:** Whisper Transcription         |
+|  tier2-    |  ...                                       |
++------------+---------------------------------------------+
+| $ claude                                                 |
+| > Analyzing transcript...                                |
++----------------------------------------------------------+
+```
+
 ## Tiers
 
 | Tier | Method | Speed | When to Use |

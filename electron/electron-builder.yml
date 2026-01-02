@@ -1,0 +1,31 @@
+appId: com.yt-comprehend.ui
+productName: YT-Comprehend
+directories:
+  output: release
+  buildResources: resources
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: ../config.yaml
+    to: config.yaml
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility
+  icon: resources/icon.png
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.utilities
+  icon: resources/icon.icns
+win:
+  target:
+    - nsis
+    - portable
+  icon: resources/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

@@ -353,6 +353,97 @@ For longer videos, the tool segments output by timestamp intervals, making it ea
 
 You can then ask Claude: "In the section around 00:30, they mention X - can you elaborate on that?"
 
+## Desktop UI Setup (Electron)
+
+The project includes an Electron-based desktop application for a graphical workflow.
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- Python environment already set up (see above)
+
+### Installation
+
+```bash
+cd electron
+npm install
+```
+
+### Development Mode
+
+```bash
+npm run dev
+```
+
+This starts:
+- Vite dev server with hot reload for the renderer
+- Electron main process (restarts on changes to main process files)
+
+### Production Build
+
+```bash
+npm run build
+```
+
+Built files are output to `electron/dist/`.
+
+### Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Framework | Electron 33+ |
+| Bundler | electron-vite |
+| Frontend | React 18 + TypeScript |
+| Styling | Tailwind CSS |
+| State | Zustand |
+| Terminal | xterm.js + node-pty |
+| Editor | Monaco Editor |
+| File Tree | react-arborist |
+| Layout | react-resizable-panels |
+
+### Architecture
+
+```
+electron/
+├── src/
+│   ├── main/              # Electron main process
+│   │   ├── index.ts       # Window management, IPC setup
+│   │   └── ipc/           # IPC services
+│   │       ├── file-service.ts    # File ops, watching
+│   │       ├── terminal-service.ts # PTY management
+│   │       ├── process-service.ts  # Spawn CLI
+│   │       └── config-service.ts   # Config management
+│   ├── preload/           # Secure IPC bridge
+│   │   └── index.ts       # contextBridge API
+│   └── renderer/          # React frontend
+│       ├── main.tsx       # Entry, Monaco setup
+│       ├── App.tsx        # Layout
+│       ├── components/    # UI components
+│       └── stores/        # Zustand state
+├── electron.vite.config.ts
+├── tailwind.config.js
+└── package.json
+```
+
+### Key Configuration
+
+**Monaco Editor**: Configured to use local bundle instead of CDN to avoid CSP issues in Electron. Worker setup is in `main.tsx`.
+
+**Content Security Policy**: Set in `index.html` to allow blob: workers:
+```
+script-src 'self' blob:; worker-src 'self' blob:;
+```
+
+**Terminal Environment**: The embedded terminal automatically activates the Python venv and includes deno in PATH.
+
+### Troubleshooting
+
+**Monaco editor not loading**: Ensure workers are configured in `main.tsx` before React renders.
+
+**Terminal not starting**: Check that node-pty is properly installed (requires native compilation).
+
+**"GPU process launch failed" errors**: These are usually harmless vsync warnings on Linux. Can be suppressed with `--disable-gpu` flag if needed.
+
 ## Future Enhancements
 
 Planned features for the visual analysis tier:

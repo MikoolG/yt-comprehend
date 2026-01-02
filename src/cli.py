@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """YT-Comprehend CLI - Video comprehension for LLM consumption."""
 
+import json
 import sys
+import time
 from pathlib import Path
 
 import click
@@ -50,6 +52,49 @@ def _get_safe_filename(video_id: str) -> str:
 def progress_callback(message: str):
     """Print progress messages."""
     console.print(f"[dim]→ {message}[/dim]", highlight=False)
+
+
+def json_progress_event(stage: str, message: str, progress: int = -1, output_path: str | None = None):
+    """Emit a JSON progress event to stdout."""
+    event = {
+        "stage": stage,
+        "message": message,
+        "progress": progress,
+        "timestamp": time.time(),
+    }
+    if output_path:
+        event["output_path"] = output_path
+    print(json.dumps(event), flush=True)
+
+
+def make_json_progress_callback():
+    """Create a progress callback that emits JSON events."""
+    stage_progress = {
+        "Trying caption extraction": ("caption", 10),
+        "Captions unavailable": ("caption", 20),
+        "Escalating to Tier 2": ("escalate", 25),
+        "Starting audio transcription": ("transcribe", 30),
+        "Downloading audio": ("download", 40),
+        "Transcribing with Whisper": ("transcribe", 60),
+        "Audio transcription failed": ("transcribe", 70),
+        "Escalating to Tier 3": ("escalate", 75),
+        "Starting full visual analysis": ("visual", 80),
+    }
+
+    def callback(message: str):
+        # Try to match known messages for progress estimation
+        stage = "processing"
+        progress = -1
+
+        for pattern, (s, p) in stage_progress.items():
+            if pattern in message:
+                stage = s
+                progress = p
+                break
+
+        json_progress_event(stage, message, progress)
+
+    return callback
 
 
 @click.command()
@@ -125,6 +170,12 @@ def progress_callback(message: str):
     default=False,
     help="Suppress progress output"
 )
+@click.option(
+    "--json-progress",
+    is_flag=True,
+    default=False,
+    help="Output JSON progress events (for UI integration)"
+)
 def main(
     url: str,
     tier: int | None,
@@ -139,6 +190,7 @@ def main(
     interval: int,
     config: str | None,
     quiet: bool,
+    json_progress: bool,
 ):
     """
     Extract video content for LLM consumption.
@@ -174,10 +226,16 @@ def main(
         vc.config["whisper"]["initial_prompt"] = prompt
     
     # Progress callback
-    callback = None if quiet else progress_callback
-    
+    if json_progress:
+        callback = make_json_progress_callback()
+        json_progress_event("start", f"Starting analysis of {url}", 0)
+    elif quiet:
+        callback = None
+    else:
+        callback = progress_callback
+
     try:
-        if not quiet:
+        if not quiet and not json_progress:
             console.print(f"[bold]Analyzing:[/bold] {url}")
             console.print()
         
@@ -188,7 +246,9 @@ def main(
             progress_callback=callback,
         )
         
-        if not quiet:
+        if json_progress:
+            json_progress_event("analyzed", f"Analysis complete (Tier {result.metadata.tier_used})", 90)
+        elif not quiet:
             console.print()
             console.print(f"[green]✓[/green] Analysis complete (Tier {result.metadata.tier_used})")
             console.print()
@@ -252,23 +312,36 @@ def main(
         # Output: save to file if path set, always print to stdout unless quiet
         if output_path:
             output_path.write_text(output_text)
-            if not quiet:
+            if json_progress:
+                json_progress_event("complete", "Saved successfully", 100, str(output_path))
+            elif not quiet:
                 console.print(f"[dim]Saved to:[/dim] {output_path}")
+        elif json_progress:
+            json_progress_event("complete", "Analysis complete", 100)
 
-        # Print to stdout (unless quiet or explicit -o file specified)
-        if not quiet and not output:
+        # Print to stdout (unless quiet or explicit -o file specified or json_progress)
+        if not quiet and not output and not json_progress:
             print(output_text)
     
     except CaptionExtractionError as e:
-        console.print(f"[red]Caption extraction failed:[/red] {e}")
+        if json_progress:
+            json_progress_event("error", f"Caption extraction failed: {e}", -1)
+        else:
+            console.print(f"[red]Caption extraction failed:[/red] {e}")
         sys.exit(1)
     except AudioExtractionError as e:
-        console.print(f"[red]Audio extraction failed:[/red] {e}")
+        if json_progress:
+            json_progress_event("error", f"Audio extraction failed: {e}", -1)
+        else:
+            console.print(f"[red]Audio extraction failed:[/red] {e}")
         sys.exit(1)
     except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
-        if not quiet:
-            console.print_exception()
+        if json_progress:
+            json_progress_event("error", f"Error: {e}", -1)
+        else:
+            console.print(f"[red]Error:[/red] {e}")
+            if not quiet:
+                console.print_exception()
         sys.exit(1)
 
 
