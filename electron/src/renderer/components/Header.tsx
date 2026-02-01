@@ -81,9 +81,15 @@ export function Header() {
 
 Save the summary to "${summaryPath}"`
 
-    // Send command to terminal
+    // First send Ctrl+C to exit any running Claude session, then send the new command
+    // Ctrl+C = \x03
     const command = `claude "${claudePrompt.replace(/"/g, '\\"').replace(/\n/g, ' ')}"\n`
-    window.api.terminal.write('main', command)
+
+    // Send Ctrl+C first, wait briefly, then send the command
+    window.api.terminal.write('main', '\x03')
+    setTimeout(() => {
+      window.api.terminal.write('main', command)
+    }, 100)
 
     addProgressMessage('Starting Claude to generate summary...')
   }, [addProgressMessage])

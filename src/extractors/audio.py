@@ -6,12 +6,39 @@ More accurate than YouTube captions, works on any video.
 
 import os
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Optional
 
 from faster_whisper import WhisperModel
+
+
+def ensure_ytdlp_updated(quiet: bool = True) -> bool:
+    """
+    Update yt-dlp to latest version.
+
+    Args:
+        quiet: If True, suppress output
+
+    Returns:
+        True if updated successfully
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-U", "yt-dlp"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if not quiet and "Successfully installed" in result.stdout:
+            print(f"[yt-dlp] Updated: {result.stdout.strip()}", file=sys.stderr)
+        return result.returncode == 0
+    except Exception as e:
+        if not quiet:
+            print(f"[yt-dlp] Update failed: {e}", file=sys.stderr)
+        return False
 
 
 @dataclass
@@ -168,23 +195,29 @@ class AudioExtractor:
             url,
         ]
         
-        try:
+        def run_download():
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 check=True,
             )
-            
             # Get the actual output path from yt-dlp
             audio_path = Path(result.stdout.strip().split('\n')[-1])
-            
             if not audio_path.exists():
                 raise AudioExtractionError(f"Audio file not found at: {audio_path}")
-            
             return audio_path
-            
+
+        try:
+            return run_download()
         except subprocess.CalledProcessError as e:
+            # On 403 error, try updating yt-dlp and retry once
+            if "403" in e.stderr:
+                ensure_ytdlp_updated(quiet=False)
+                try:
+                    return run_download()
+                except subprocess.CalledProcessError as e2:
+                    raise AudioExtractionError(f"yt-dlp failed: {e2.stderr}")
             raise AudioExtractionError(f"yt-dlp failed: {e.stderr}")
         except Exception as e:
             raise AudioExtractionError(f"Failed to download audio: {e}")

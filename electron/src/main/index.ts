@@ -1,10 +1,52 @@
 import { app, BrowserWindow, ipcMain, shell, Menu } from 'electron'
 import { join } from 'path'
+import { spawn } from 'child_process'
+import { homedir } from 'os'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { setupFileService } from './ipc/file-service'
 import { setupTerminalService } from './ipc/terminal-service'
 import { setupProcessService } from './ipc/process-service'
 import { setupConfigService } from './ipc/config-service'
+
+// Update yt-dlp in background on startup
+function updateYtDlp(projectRoot: string): void {
+  const venvBin = join(projectRoot, 'venv', 'bin')
+  const pipPath = join(venvBin, 'pip')
+  const denoPath = join(homedir(), '.deno', 'bin')
+
+  const env = {
+    ...process.env,
+    PATH: `${venvBin}:${denoPath}:${process.env.PATH}`,
+    VIRTUAL_ENV: join(projectRoot, 'venv')
+  }
+
+  console.log('[yt-dlp] Checking for updates...')
+
+  const proc = spawn(pipPath, ['install', '-U', 'yt-dlp'], {
+    cwd: projectRoot,
+    env: env as NodeJS.ProcessEnv,
+    stdio: 'pipe'
+  })
+
+  proc.stdout?.on('data', (data: Buffer) => {
+    const text = data.toString().trim()
+    if (text.includes('Successfully installed')) {
+      console.log('[yt-dlp] Updated:', text)
+    }
+  })
+
+  proc.on('close', (code) => {
+    if (code === 0) {
+      console.log('[yt-dlp] Update check complete')
+    } else {
+      console.log('[yt-dlp] Update check failed with code:', code)
+    }
+  })
+
+  proc.on('error', (err) => {
+    console.log('[yt-dlp] Update check error:', err.message)
+  })
+}
 
 let mainWindow: BrowserWindow | null = null
 
@@ -70,6 +112,9 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
+  // Update yt-dlp in background (non-blocking)
+  updateYtDlp(getProjectRoot())
 
   // Setup IPC services
   setupFileService(ipcMain, getProjectRoot)
