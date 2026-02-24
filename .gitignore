@@ -6,6 +6,9 @@ dist/
 build/
 .eggs/
 
+# Environment / secrets
+.env
+
 # Virtual environment
 venv/
 .venv/

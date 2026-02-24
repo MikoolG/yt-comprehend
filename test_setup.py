@@ -15,6 +15,7 @@ def check_dependencies():
         "click": "click",
         "rich": "rich",
         "yaml": "pyyaml",
+        "google.genai": "google-genai",
     }
     
     optional = {

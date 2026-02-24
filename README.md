@@ -16,6 +16,12 @@ yt-comprehend URL --tier 1  # Captions only (instant)
 yt-comprehend URL --tier 2  # Audio transcription (Whisper)
 yt-comprehend URL --tier 3  # Full visual analysis
 
+# Auto-summarize via LLM API after extraction
+yt-comprehend URL --summarize               # Uses default provider (Gemini)
+yt-comprehend URL -s --provider openai      # Use OpenAI instead
+yt-comprehend URL -s --provider anthropic   # Use Anthropic
+yt-comprehend URL -s --api-key KEY          # Pass API key directly
+
 # Output options
 yt-comprehend URL --no-save        # Print to stdout only, don't save
 yt-comprehend URL -o transcript.md # Save to specific file
@@ -38,7 +44,7 @@ output/
 ├── tier1-captions/
 │   ├── transcripts/    # Raw transcripts with timestamps
 │   │   └── video-title.md
-│   └── summaries/      # Claude Code generated summaries
+│   └── summaries/      # LLM-generated summaries
 │       └── video-title.md
 ├── tier2-whisper/
 │   ├── transcripts/
@@ -48,11 +54,33 @@ output/
     └── summaries/
 ```
 
-## Workflow with Claude Code
+## Summarization
 
-1. **Extract transcript**: `yt-comprehend URL --tier 1` (or tier 2/3)
-2. **Generate summary**: Claude Code reads the transcript and creates a comprehensive summary
-3. **Both saved**: Transcripts and summaries are saved to respective folders
+Two modes for generating summaries from transcripts:
+
+### API Mode (automated)
+
+Extracts transcript and auto-summarizes in one step using an LLM API:
+
+```bash
+yt-comprehend URL --summarize  # Gemini by default
+```
+
+Supports multiple providers: **Gemini** (default), **OpenAI**, and **Anthropic**.
+
+API key setup (pick one):
+- `.env` file in project root: `GEMINI_API_KEY=your-key` (or `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`)
+- Environment variable in your shell
+- `config.yaml` under `summarize.api_key`
+- CLI flag: `--api-key KEY`
+
+### Claude Mode (interactive)
+
+Use Claude Code in the embedded terminal for interactive summarization:
+
+1. **Extract transcript**: `yt-comprehend URL --tier 1`
+2. **Claude summarizes**: Claude Code reads the transcript and creates a comprehensive summary
+3. **Both saved**: Transcripts and summaries go to respective folders
 
 ## Desktop UI
 
@@ -79,10 +107,12 @@ npm run build    # Production build
 ### Features
 
 - **Video URL input** with paste button and tier selection dropdown
-- **Progress bar** showing real-time extraction status via JSON events
+- **Claude/API toggle** - switch between Claude CLI and automated LLM API summarization
+- **Progress bar** showing real-time extraction and summarization status via JSON events
 - **File browser** for output transcripts and summaries (auto-refreshes)
 - **Monaco Editor** for viewing and editing markdown files with syntax highlighting
 - **Embedded terminal** with venv activated for running Claude CLI
+- **Settings panel** for configuring provider, API key, model, and other options
 - **Resizable panels** - drag to resize editor and terminal areas
 - **Right-click context menu** for cut/copy/paste
 
@@ -105,8 +135,8 @@ npm run build    # Production build
 |   summa/   |  **Method:** Whisper Transcription         |
 |  tier2-    |  ...                                       |
 +------------+---------------------------------------------+
+| Terminal          [Claude|API]                    [↻]    |
 | $ claude                                                 |
-| > Analyzing transcript...                                |
 +----------------------------------------------------------+
 ```
 

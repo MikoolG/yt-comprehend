@@ -18,6 +18,55 @@ interface Config {
     include_timestamps: boolean
     timestamp_interval: number
   }
+  summarize: {
+    provider: string
+    api_key: string | null
+    model: string | null
+  }
+}
+
+const PROVIDER_MODELS: Record<string, { value: string; label: string }[]> = {
+  gemini: [
+    { value: '', label: 'Default (gemini-2.5-flash)' },
+    { value: 'gemini-2.5-flash', label: 'gemini-2.5-flash' },
+    { value: 'gemini-2.5-pro', label: 'gemini-2.5-pro' },
+    { value: 'gemini-2.0-flash', label: 'gemini-2.0-flash' }
+  ],
+  openai: [
+    { value: '', label: 'Default (gpt-4o-mini)' },
+    { value: 'gpt-4o-mini', label: 'gpt-4o-mini' },
+    { value: 'gpt-4o', label: 'gpt-4o' },
+    { value: 'gpt-4.1-mini', label: 'gpt-4.1-mini' },
+    { value: 'gpt-4.1', label: 'gpt-4.1' }
+  ],
+  anthropic: [
+    { value: '', label: 'Default (claude-sonnet-4-6)' },
+    { value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6' },
+    { value: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5' },
+    { value: 'claude-opus-4-6', label: 'claude-opus-4-6' }
+  ]
+}
+
+function ModelSelect({
+  provider,
+  value,
+  onChange
+}: {
+  provider: string
+  value: string
+  onChange: (value: string) => void
+}) {
+  const models = PROVIDER_MODELS[provider] || [{ value: '', label: 'Default' }]
+
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="w-48">
+      {models.map((m) => (
+        <option key={m.value} value={m.value}>
+          {m.label}
+        </option>
+      ))}
+    </select>
+  )
 }
 
 interface SettingsProps {
@@ -275,6 +324,79 @@ export function Settings({ onClose }: SettingsProps) {
                       className="w-20 text-center"
                       min={5}
                       max={300}
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* Summarization */}
+              <section>
+                <h3 className="text-sm font-semibold text-text-secondary uppercase mb-3">
+                  Summarization (API Mode)
+                </h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm">Provider</label>
+                    <select
+                      value={config.summarize?.provider || 'gemini'}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          summarize: {
+                            ...config.summarize,
+                            provider: e.target.value,
+                            model: null
+                          }
+                        })
+                      }
+                      className="w-48"
+                    >
+                      <option value="gemini">Google Gemini</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-sm">API Key</label>
+                    </div>
+                    <input
+                      type="password"
+                      value={config.summarize?.api_key || ''}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          summarize: {
+                            ...config.summarize,
+                            api_key: e.target.value || null
+                          }
+                        })
+                      }
+                      placeholder="Enter API key..."
+                      className="w-full"
+                    />
+                    <p className="text-xs text-text-secondary mt-1">
+                      Can also be set via{' '}
+                      <code className="bg-border px-1 rounded text-[11px]">
+                        {(config.summarize?.provider || 'GEMINI').toUpperCase()}_API_KEY
+                      </code>{' '}
+                      environment variable
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm">Model</label>
+                    <ModelSelect
+                      provider={config.summarize?.provider || 'gemini'}
+                      value={config.summarize?.model || ''}
+                      onChange={(value) =>
+                        setConfig({
+                          ...config,
+                          summarize: {
+                            ...config.summarize,
+                            model: value || null
+                          }
+                        })
+                      }
                     />
                   </div>
                 </div>

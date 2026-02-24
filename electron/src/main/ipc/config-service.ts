@@ -31,6 +31,11 @@ export interface Config {
     keep_audio: boolean
     keep_frames: boolean
   }
+  summarize: {
+    provider: string
+    api_key: string | null
+    model: string | null
+  }
 }
 
 let cachedConfig: Config | null = null
@@ -166,6 +171,11 @@ function getDefaultConfig(): Config {
       delete_temp_files: true,
       keep_audio: false,
       keep_frames: false
+    },
+    summarize: {
+      provider: 'gemini',
+      api_key: null,
+      model: null
     }
   }
 }

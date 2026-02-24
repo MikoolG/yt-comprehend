@@ -15,6 +15,9 @@ pyyaml>=6.0
 # Utilities
 validators>=0.22.0
 
+# Summarization (default provider: Gemini)
+google-genai>=1.0.0
+
 # Tier 3 - Visual Analysis (uncomment when ready)
 # scenedetect[opencv]>=0.6.4
 # paddlepaddle>=2.6.0

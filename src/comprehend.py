@@ -169,6 +169,11 @@ class VideoComprehend:
                 "keep_audio": False,
                 "keep_frames": False,
             },
+            "summarize": {
+                "provider": "gemini",
+                "api_key": None,
+                "model": None,
+            },
         }
         
         if config_path:

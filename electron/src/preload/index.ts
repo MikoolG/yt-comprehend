@@ -29,6 +29,7 @@ export interface YtComprehendOptions {
   device?: 'auto' | 'cpu' | 'cuda'
   quiet?: boolean
   jsonProgress?: boolean
+  summarize?: boolean
 }
 
 export interface CompletionResult {
@@ -63,6 +64,11 @@ export interface Config {
     delete_temp_files: boolean
     keep_audio: boolean
     keep_frames: boolean
+  }
+  summarize: {
+    provider: string
+    api_key: string | null
+    model: string | null
   }
 }
 

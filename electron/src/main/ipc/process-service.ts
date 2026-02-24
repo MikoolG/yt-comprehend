@@ -1,7 +1,9 @@
 import { IpcMain, BrowserWindow } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
+import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
+import { parse } from 'yaml'
 
 export interface YtComprehendOptions {
   url: string
@@ -10,6 +12,7 @@ export interface YtComprehendOptions {
   device?: 'auto' | 'cpu' | 'cuda'
   quiet?: boolean
   jsonProgress?: boolean
+  summarize?: boolean
 }
 
 export interface ProgressEvent {
@@ -54,13 +57,49 @@ export function setupProcessService(
     if (options.jsonProgress) {
       args.push('--json-progress')
     }
+    if (options.summarize) {
+      args.push('--summarize')
+    }
+
+    // Load .env file from project root
+    const dotEnv: Record<string, string> = {}
+    try {
+      const envContent = await readFile(join(root, '.env'), 'utf-8')
+      for (const line of envContent.split('\n')) {
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) continue
+        const eqIdx = trimmed.indexOf('=')
+        if (eqIdx > 0) {
+          dotEnv[trimmed.slice(0, eqIdx).trim()] = trimmed.slice(eqIdx + 1).trim()
+        }
+      }
+    } catch {
+      // No .env file, that's fine
+    }
+
+    // Read config to get API key + provider for environment (Settings UI override)
+    let configEnv: Record<string, string> = {}
+    try {
+      const configContent = await readFile(join(root, 'config.yaml'), 'utf-8')
+      const config = parse(configContent) as Record<string, unknown>
+      const summarizeConfig = config.summarize as Record<string, unknown> | undefined
+      if (summarizeConfig?.api_key) {
+        const provider = String(summarizeConfig.provider || 'gemini')
+        configEnv[`${provider.toUpperCase()}_API_KEY`] = String(summarizeConfig.api_key)
+      }
+    } catch {
+      // Config read failed, continue without
+    }
 
     // Environment with venv activated
     const venvBin = join(root, 'venv', 'bin')
     const denoPath = join(homedir(), '.deno', 'bin')
 
+    // Priority: config.yaml (Settings UI) > .env file > system env
     const env: Record<string, string> = {
       ...process.env,
+      ...dotEnv,
+      ...configEnv,
       PATH: `${venvBin}:${denoPath}:${process.env.PATH}`,
       VIRTUAL_ENV: join(root, 'venv'),
       PYTHONUNBUFFERED: '1'

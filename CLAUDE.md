@@ -42,6 +42,10 @@ yt-comprehend URL --no-save          # Print to stdout only
 yt-comprehend URL --quiet            # Save only, no stdout output
 yt-comprehend URL -o out.md          # Save to specific file
 yt-comprehend URL --json-progress    # JSON progress events for UI integration
+yt-comprehend URL --summarize        # Auto-summarize via LLM API after extraction
+yt-comprehend URL -s --api-key KEY   # Summarize with explicit API key
+yt-comprehend URL -s --provider openai --summarize-model gpt-4o  # Use a different provider
+yt-comprehend URL -s --provider anthropic  # Use Anthropic
 ```
 
 ## Desktop UI
@@ -65,17 +69,24 @@ npm run build            # Build for production
 - **File browser**: View output files (transcripts and summaries)
 - **Monaco Editor**: View and edit markdown files with syntax highlighting
 - **Embedded terminal**: Run Claude CLI and other commands
+- **Claude/API toggle**: Switch between Claude CLI (terminal) and LLM API summarization
 
 ### UI Workflow
 
 1. Enter a YouTube URL in the input field
 2. Select the tier (1 for fast captions, 2 for Whisper transcription)
-3. Click "Execute" to generate the transcript
-4. View the generated file in the editor panel
-5. Use the embedded terminal to run Claude CLI for summarization:
-   ```bash
-   claude   # Start Claude CLI in the terminal
-   ```
+3. Choose summarization mode via the **Claude/API** toggle in the terminal header:
+   - **Claude**: Transcript extracts, then Claude CLI runs in the terminal to summarize
+   - **API**: Transcript extracts, then LLM API (Gemini/OpenAI/Anthropic) auto-summarizes
+4. Click "Execute" to generate the transcript (and summary in API mode)
+5. View the generated files in the editor panel
+
+### API Key Setup
+
+For API summarization mode, set the provider API key via one of:
+- **`.env` file** in project root (e.g. `GEMINI_API_KEY=...`) - recommended
+- **Settings UI** (gear icon → Summarization section)
+- **Environment variable** in your shell
 
 ### Keyboard Shortcuts
 
@@ -126,10 +137,11 @@ When asked to analyze a YouTube video:
 
 - **`src/cli.py`**: CLI entry point, handles arguments and output saving
 - **`src/comprehend.py`**: `VideoComprehend` orchestrates tiers, auto-escalates on failure, returns `ComprehendResult`
+- **`src/summarize.py`**: Provider-agnostic LLM summarization (Gemini, OpenAI, Anthropic) with factory pattern
 - **`src/extractors/captions.py`**: Tier 1 - uses `youtube-transcript-api` v1.x (`.list()` / `.fetch()`)
 - **`src/extractors/audio.py`**: Tier 2 - yt-dlp download + faster-whisper (lazy-loaded model)
 - **`src/extractors/visual.py`**: Tier 3 - scene detection → frame extraction → dedup → OCR
-- **`config.yaml`**: Default settings for whisper, visual, output directory. CLI options override.
+- **`config.yaml`**: Default settings for whisper, visual, output, summarize. CLI options override.
 
 ### Electron UI
 
@@ -171,3 +183,6 @@ When asked to analyze a YouTube video:
 - System deps: ffmpeg, deno (required by yt-dlp for YouTube as of 2025)
 - Tier 3 requires `[visual]` extra for scenedetect, paddleocr, imagededup
 - Output directory can be configured in `config.yaml` under `output.directory`
+- API key resolution: `--api-key` flag > provider env var (e.g. `GEMINI_API_KEY`) > `config.yaml` `summarize.api_key`
+- Summarization supports multiple providers: gemini (default), openai, anthropic
+- Provider is configurable via `--provider` flag or `config.yaml` `summarize.provider`

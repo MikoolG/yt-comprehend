@@ -176,6 +176,27 @@ def make_json_progress_callback():
     default=False,
     help="Output JSON progress events (for UI integration)"
 )
+@click.option(
+    "--summarize", "-s",
+    is_flag=True,
+    default=False,
+    help="Summarize transcript via LLM API after extraction"
+)
+@click.option(
+    "--provider",
+    default=None,
+    help="LLM provider for summarization (gemini, openai, anthropic)"
+)
+@click.option(
+    "--api-key",
+    default=None,
+    help="API key for summarization provider (overrides env var and config)"
+)
+@click.option(
+    "--summarize-model",
+    default=None,
+    help="Model for summarization (default: provider-specific)"
+)
 def main(
     url: str,
     tier: int | None,
@@ -191,6 +212,10 @@ def main(
     config: str | None,
     quiet: bool,
     json_progress: bool,
+    summarize: bool,
+    provider: str | None,
+    api_key: str | None,
+    summarize_model: str | None,
 ):
     """
     Extract video content for LLM consumption.
@@ -313,11 +338,61 @@ def main(
         if output_path:
             output_path.write_text(output_text)
             if json_progress:
-                json_progress_event("complete", "Saved successfully", 100, str(output_path))
+                if summarize:
+                    # Don't emit "complete" yet - summarization still pending
+                    json_progress_event("transcript_saved", "Transcript saved", 90, str(output_path))
+                else:
+                    json_progress_event("complete", "Saved successfully", 100, str(output_path))
             elif not quiet:
                 console.print(f"[dim]Saved to:[/dim] {output_path}")
         elif json_progress:
             json_progress_event("complete", "Analysis complete", 100)
+
+        # Summarize via LLM API if requested
+        if summarize and output_path:
+            try:
+                from src.summarize import summarize_file, SummarizationError
+
+                if json_progress:
+                    json_progress_event("summarize", "Starting API summarization...", 92)
+
+                # Resolve settings: cli flag > config
+                sum_config = vc.config.get("summarize", {})
+                resolved_provider = provider or sum_config.get("provider", "gemini")
+                resolved_key = api_key or sum_config.get("api_key")
+                resolved_model = summarize_model or sum_config.get("model")
+
+                def summarize_progress(msg):
+                    if json_progress:
+                        json_progress_event("summarize", msg, 95)
+                    elif not quiet:
+                        console.print(f"[dim]-> {msg}[/dim]", highlight=False)
+
+                summary_path = summarize_file(
+                    output_path,
+                    provider=resolved_provider,
+                    api_key=resolved_key,
+                    model=resolved_model,
+                    progress_callback=summarize_progress,
+                )
+
+                if json_progress:
+                    json_progress_event(
+                        "summary_complete", "Summary saved", 100, str(summary_path)
+                    )
+                elif not quiet:
+                    console.print(f"[green]✓[/green] Summary saved to: {summary_path}")
+
+            except SummarizationError as e:
+                if json_progress:
+                    json_progress_event("error", f"Summarization failed: {e}", -1)
+                elif not quiet:
+                    console.print(f"[yellow]Warning:[/yellow] Summarization failed: {e}")
+            except Exception as e:
+                if json_progress:
+                    json_progress_event("error", f"Summarization error: {e}", -1)
+                elif not quiet:
+                    console.print(f"[yellow]Warning:[/yellow] Summarization error: {e}")
 
         # Print to stdout (unless quiet or explicit -o file specified or json_progress)
         if not quiet and not output and not json_progress:

@@ -16,7 +16,8 @@ export function Header() {
     clearProgressMessages,
     refreshFileTree,
     setShowSettings,
-    setSelectedFile
+    setSelectedFile,
+    summarizeMode
   } = useAppStore()
 
   // Handle paste from clipboard
@@ -43,7 +44,8 @@ export function Header() {
       await window.api.process.run({
         url: url.trim(),
         tier,
-        jsonProgress: true
+        jsonProgress: true,
+        summarize: summarizeMode === 'api'
       })
     } catch (error) {
       addProgressMessage(`Error: ${error}`)
@@ -56,7 +58,8 @@ export function Header() {
     setIsProcessing,
     clearProgressMessages,
     setCurrentProgress,
-    addProgressMessage
+    addProgressMessage,
+    summarizeMode
   ])
 
   // Handle stop
@@ -100,13 +103,30 @@ Save the summary to "${summaryPath}"`
       setCurrentProgress(event)
       addProgressMessage(`[${event.stage}] ${event.message}`)
 
-      // If complete, auto-select the output file and run Claude
+      // Transcript complete (no summarization) - run Claude if in Claude mode
       if (event.stage === 'complete' && event.output_path) {
         setTimeout(() => {
           refreshFileTree()
           setSelectedFile(event.output_path!)
-          // Auto-run Claude to summarize
-          runClaudeSummarize(event.output_path!)
+          if (summarizeMode === 'claude') {
+            runClaudeSummarize(event.output_path!)
+          }
+        }, 500)
+      }
+
+      // Transcript saved (API mode, summarization pending) - select transcript
+      if (event.stage === 'transcript_saved' && event.output_path) {
+        setTimeout(() => {
+          refreshFileTree()
+          setSelectedFile(event.output_path!)
+        }, 500)
+      }
+
+      // API summary complete - auto-select the summary file
+      if (event.stage === 'summary_complete' && event.output_path) {
+        setTimeout(() => {
+          refreshFileTree()
+          setSelectedFile(event.output_path!)
         }, 500)
       }
     })
@@ -147,7 +167,8 @@ Save the summary to "${summaryPath}"`
     setIsProcessing,
     refreshFileTree,
     setSelectedFile,
-    runClaudeSummarize
+    runClaudeSummarize,
+    summarizeMode
   ])
 
   // Keyboard shortcut: Ctrl+Enter to execute

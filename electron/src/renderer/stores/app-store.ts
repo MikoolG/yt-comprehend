@@ -55,6 +55,10 @@ interface AppState {
   terminalReady: boolean
   setTerminalReady: (ready: boolean) => void
 
+  // Summarize mode
+  summarizeMode: 'claude' | 'api'
+  setSummarizeMode: (mode: 'claude' | 'api') => void
+
   // Settings panel
   showSettings: boolean
   setShowSettings: (show: boolean) => void
@@ -114,6 +118,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Terminal
   terminalReady: false,
   setTerminalReady: (ready) => set({ terminalReady: ready }),
+
+  // Summarize mode
+  summarizeMode: 'claude',
+  setSummarizeMode: (mode) => set({ summarizeMode: mode }),
 
   // Settings
   showSettings: false,

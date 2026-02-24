@@ -42,6 +42,12 @@ cleanup:
   keep_audio: false         # Keep downloaded audio after transcription
   keep_frames: false        # Keep extracted frames after OCR
 
+# Summarization (API mode)
+summarize:
+  provider: "gemini"          # gemini, openai, anthropic
+  api_key: null               # Or set provider env var (GEMINI_API_KEY, OPENAI_API_KEY, etc.)
+  model: null                 # null = use provider default
+
 # Paths
 paths:
   temp_dir: "./temp"
