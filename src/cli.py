@@ -2,6 +2,7 @@
 """YT-Comprehend CLI - Video comprehension for LLM consumption."""
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -19,6 +20,30 @@ from src.extractors.gemini_video import GeminiVideoError
 from src.summarize import SummarizationError, summarize_file
 
 console = Console()
+err_console = Console(stderr=True)
+
+
+def _load_project_env():
+    """Load the project-root .env into os.environ (existing vars win).
+
+    Lets API keys (GEMINI_API_KEY etc.) work from any terminal without
+    sourcing the file manually - important for agent/script usage.
+    """
+    env_path = Path(__file__).parent.parent / ".env"
+    if not env_path.exists():
+        return
+    try:
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and value and key not in os.environ:
+                os.environ[key] = value
+    except Exception:
+        pass  # .env is a convenience; never fail on it
 
 
 def _get_safe_filename(video_id: str) -> str:
@@ -207,6 +232,14 @@ def make_json_progress_callback():
     default=None,
     help="Model for summarization (default: provider-specific)"
 )
+@click.option(
+    "--llm",
+    is_flag=True,
+    default=False,
+    help="Agent mode: extract + summarize (Gemini free tier by default), print ONLY the "
+         "summary markdown to stdout; progress/warnings go to stderr. Transcript and "
+         "summary are still saved to output/. Designed for LLMs and scripts."
+)
 def main(
     url: str,
     tier: str | None,
@@ -227,6 +260,7 @@ def main(
     provider: str | None,
     api_key: str | None,
     summarize_model: str | None,
+    llm: bool,
 ):
     """
     Extract video content for LLM consumption.
@@ -237,10 +271,20 @@ def main(
 
         yt-comprehend "https://youtube.com/watch?v=VIDEO_ID"
 
+        yt-comprehend URL --llm          # agent mode: summary on stdout
+
         yt-comprehend VIDEO_ID --tier 2 --model large-v3
 
         yt-comprehend URL -o transcript.md --format markdown
     """
+    _load_project_env()
+
+    if llm and json_progress:
+        raise click.UsageError("--llm and --json-progress are mutually exclusive")
+    if llm:
+        summarize = not no_save  # summary needs a saved transcript
+        quiet = True  # silence stdout chatter; --llm reports progress on stderr
+
     # Find config file
     config_path = config
     if not config_path:
@@ -281,6 +325,10 @@ def main(
     if json_progress:
         callback = make_json_progress_callback()
         json_progress_event("start", f"Starting analysis of {url}", 0)
+    elif llm:
+        # Keep stdout clean for the summary; progress goes to stderr
+        def callback(message: str):
+            err_console.print(f"[dim]→ {message}[/dim]", highlight=False)
     elif quiet:
         callback = None
     else:
@@ -376,6 +424,8 @@ def main(
             json_progress_event("complete", "Analysis complete", 100)
 
         # Summarize via LLM API if requested
+        summary_path = None
+        summary_error = None
         if summarize and output_path:
             try:
                 if json_progress:
@@ -390,6 +440,8 @@ def main(
                 def summarize_progress(msg):
                     if json_progress:
                         json_progress_event("summarize", msg, 95)
+                    elif llm:
+                        err_console.print(f"[dim]-> {msg}[/dim]", highlight=False)
                     elif not quiet:
                         console.print(f"[dim]-> {msg}[/dim]", highlight=False)
 
@@ -405,49 +457,60 @@ def main(
                     json_progress_event(
                         "summary_complete", "Summary saved", 100, str(summary_path)
                     )
+                elif llm:
+                    err_console.print(f"[green]✓[/green] Summary saved to: {summary_path}")
                 elif not quiet:
                     console.print(f"[green]✓[/green] Summary saved to: {summary_path}")
 
-            except SummarizationError as e:
+            except (SummarizationError, OSError, ValueError, RuntimeError) as e:
+                summary_error = str(e)
                 if json_progress:
                     json_progress_event("error", f"Summarization failed: {e}", -1)
+                elif llm:
+                    err_console.print(f"[yellow]Warning:[/yellow] Summarization failed: {e}")
                 elif not quiet:
                     console.print(f"[yellow]Warning:[/yellow] Summarization failed: {e}")
-            except Exception as e:
-                if json_progress:
-                    json_progress_event("error", f"Summarization error: {e}", -1)
-                elif not quiet:
-                    console.print(f"[yellow]Warning:[/yellow] Summarization error: {e}")
 
-        # Print to stdout (unless quiet or explicit -o file specified or json_progress)
-        if not quiet and not output and not json_progress:
+        # stdout contract:
+        # --llm        -> summary markdown (fallback: transcript)
+        # default      -> transcript (unless quiet/-o/--json-progress)
+        if llm:
+            if summary_path is not None:
+                print(Path(summary_path).read_text())
+            else:
+                if summary_error:
+                    err_console.print(
+                        "[yellow]Summary unavailable - printing transcript instead[/yellow]"
+                    )
+                print(output_text)
+        elif not quiet and not output and not json_progress:
             print(output_text)
 
     except CaptionExtractionError as e:
         if json_progress:
             json_progress_event("error", f"Caption extraction failed: {e}", -1)
         else:
-            console.print(f"[red]Caption extraction failed:[/red] {e}")
+            err_console.print(f"[red]Caption extraction failed:[/red] {e}")
         sys.exit(1)
     except GeminiVideoError as e:
         if json_progress:
             json_progress_event("error", f"Gemini video analysis failed: {e}", -1)
         else:
-            console.print(f"[red]Gemini video analysis failed:[/red] {e}")
+            err_console.print(f"[red]Gemini video analysis failed:[/red] {e}")
         sys.exit(1)
     except AudioExtractionError as e:
         if json_progress:
             json_progress_event("error", f"Audio extraction failed: {e}", -1)
         else:
-            console.print(f"[red]Audio extraction failed:[/red] {e}")
+            err_console.print(f"[red]Audio extraction failed:[/red] {e}")
         sys.exit(1)
     except Exception as e:
         if json_progress:
             json_progress_event("error", f"Error: {e}", -1)
         else:
-            console.print(f"[red]Error:[/red] {e}")
+            err_console.print(f"[red]Error:[/red] {e}")
             if not quiet:
-                console.print_exception()
+                err_console.print_exception()
         sys.exit(1)
 
 

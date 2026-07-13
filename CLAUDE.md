@@ -122,7 +122,13 @@ output/
 
 ## Video Comprehension Workflow
 
-When asked to analyze a YouTube video:
+**Fast path (agent mode)**: `yt-comprehend "URL" --llm` — prints the summary
+markdown to stdout (progress on stderr), saves transcript + summary to `output/`,
+uses captions + Gemini free tier with all fallbacks built in. Read stdout directly.
+Escalate with `--llm --tier 2` (Whisper) or `--llm --tier gemini` when captions
+are missing or visual fidelity matters.
+
+Manual workflow when asked to analyze a YouTube video:
 
 1. **Extract transcript** using the CLI:
    ```bash

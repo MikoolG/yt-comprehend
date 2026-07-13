@@ -63,6 +63,30 @@ output/
     └── summaries/
 ```
 
+## Agent / LLM Usage (no MCP required)
+
+yt-comprehend is designed to be driven by LLMs as a plain terminal command:
+
+```bash
+yt-comprehend "URL_OR_VIDEO_ID" --llm
+```
+
+`--llm` is a one-shot agent contract:
+- stdout carries **only the summary markdown** (or the transcript if summarization fails) - safe to read/pipe directly
+- progress and warnings go to stderr
+- transcript + summary are still saved under `output/`
+- captions tier by default with automatic fallbacks (yt-dlp subtitles → Whisper); Gemini free tier summarization with free-model fallback
+- the project `.env` is auto-loaded, so API keys work from any terminal
+
+Escalate only when needed: `--llm --tier 2` (Whisper) or `--llm --tier gemini`
+(zero-download video understanding), and switch summarizers with `--provider`.
+
+For Claude Code specifically, the repo ships a skill at
+`.claude/skills/yt-comprehend/SKILL.md` - copy it to `~/.claude/skills/` to make
+any session recognize YouTube links and yt-comprehend mentions globally. A thin
+wrapper script in `~/.local/bin` (calling `<repo>/venv/bin/yt-comprehend`) makes
+the command available system-wide.
+
 ## Summarization
 
 Two modes for generating summaries from transcripts:
