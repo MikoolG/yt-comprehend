@@ -1,9 +1,11 @@
 # YT-Comprehend Configuration
 
-# Default tier to use (1, 2, or 3)
-# 1 = Captions only (fastest)
+# Default tier to use (1, 2, 3, or "gemini")
+# 1 = Captions only (fastest; falls back to yt-dlp subtitle download if blocked)
 # 2 = Audio transcription with Whisper
 # 3 = Full visual analysis
+# gemini = Send the YouTube URL directly to the Gemini API (no download;
+#          free tier, ~8h video/day, preview feature)
 default_tier: 1
 
 # Auto-escalate to next tier if current tier fails
@@ -11,13 +13,14 @@ auto_escalate: true
 
 # Whisper settings (Tier 2)
 whisper:
-  model: "medium"           # tiny, small, medium, large-v3, large-v3-turbo
+  model: "large-v3-turbo"   # tiny, small, medium, large-v3, large-v3-turbo, distil-large-v3.5
+  backend: "local"          # local (faster-whisper) or groq (free cloud API, needs GROQ_API_KEY)
   device: "auto"            # auto, cpu, cuda
   compute_type: "int8"      # int8, float16, float32 (int8 best for CPU)
   beam_size: 5
   language: null            # null for auto-detect, or "en", "es", etc.
   initial_prompt: null      # Optional prompt to guide vocabulary/style
-  
+
 # Visual analysis settings (Tier 3)
 visual:
   scene_threshold: 3.0      # Lower = more sensitive scene detection
@@ -43,10 +46,13 @@ cleanup:
   keep_frames: false        # Keep extracted frames after OCR
 
 # Summarization (API mode)
+# Free-first: gemini (free tier, 1M context - default), openrouter (free models),
+# ollama (local, unlimited). Paid/BYO-key: openai, anthropic.
 summarize:
-  provider: "gemini"          # gemini, openai, anthropic
-  api_key: null               # Or set provider env var (GEMINI_API_KEY, OPENAI_API_KEY, etc.)
-  model: null                 # null = use provider default
+  provider: "gemini"          # gemini, openrouter, ollama, openai, anthropic
+  api_key: null               # Prefer the provider env var in .env (GEMINI_API_KEY, etc.)
+  model: null                 # null = provider default (gemini-flash-latest, openrouter/free,
+                              #        gemma3, gpt-5.4-mini, claude-opus-4-8)
 
 # Paths
 paths:

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
+import { Group, Panel, Separator } from 'react-resizable-panels'
 import { Header } from './components/Header'
 import { FileTree } from './components/FileTree'
 import { Editor } from './components/Editor'
@@ -53,36 +53,36 @@ export default function App() {
       {isProcessing && <ProgressPanel />}
 
       {/* Main content */}
-      <PanelGroup direction="vertical" className="flex-1 min-h-0">
-        <Panel defaultSize={55} minSize={20}>
-          <PanelGroup direction="horizontal" className="h-full">
+      <Group orientation="vertical" className="flex-1 min-h-0">
+        <Panel defaultSize="55%" minSize="20%">
+          <Group orientation="horizontal" className="h-full">
             {/* File tree sidebar */}
-            <Panel defaultSize={20} minSize={15} maxSize={40}>
+            <Panel defaultSize="20%" minSize="15%" maxSize="40%">
               <div className="h-full">
                 <FileTree />
               </div>
             </Panel>
 
-            <PanelResizeHandle className="w-1 bg-border hover:bg-accent transition-colors" />
+            <Separator className="w-1 bg-border hover:bg-accent transition-colors" />
 
             {/* Editor */}
-            <Panel defaultSize={80}>
+            <Panel defaultSize="80%">
               <div className="h-full">
                 <Editor />
               </div>
             </Panel>
-          </PanelGroup>
+          </Group>
         </Panel>
 
-        <PanelResizeHandle className="h-1 bg-border hover:bg-accent transition-colors" />
+        <Separator className="h-1 bg-border hover:bg-accent transition-colors" />
 
         {/* Terminal */}
-        <Panel defaultSize={45} minSize={20}>
+        <Panel defaultSize="45%" minSize="20%">
           <div className="h-full">
             <Terminal />
           </div>
         </Panel>
-      </PanelGroup>
+      </Group>
 
       {/* Settings modal */}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}

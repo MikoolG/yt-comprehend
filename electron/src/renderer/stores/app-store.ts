@@ -16,14 +16,16 @@ export interface ProgressEvent {
   output_path?: string
 }
 
+export type Tier = 1 | 2 | 3 | 'gemini'
+
 interface AppState {
   // URL input
   url: string
   setUrl: (url: string) => void
 
   // Tier selection
-  tier: 1 | 2 | 3
-  setTier: (tier: 1 | 2 | 3) => void
+  tier: Tier
+  setTier: (tier: Tier) => void
 
   // Processing state
   isProcessing: boolean
@@ -68,7 +70,16 @@ interface AppState {
   setOutputDir: (dir: string) => void
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
+function loadSummarizeMode(): 'claude' | 'api' {
+  try {
+    const stored = localStorage.getItem('summarizeMode')
+    return stored === 'api' ? 'api' : 'claude'
+  } catch {
+    return 'claude'
+  }
+}
+
+export const useAppStore = create<AppState>((set) => ({
   // URL
   url: '',
   setUrl: (url) => set({ url }),
@@ -119,9 +130,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   terminalReady: false,
   setTerminalReady: (ready) => set({ terminalReady: ready }),
 
-  // Summarize mode
-  summarizeMode: 'claude',
-  setSummarizeMode: (mode) => set({ summarizeMode: mode }),
+  // Summarize mode (persisted across launches)
+  summarizeMode: loadSummarizeMode(),
+  setSummarizeMode: (mode) => {
+    try {
+      localStorage.setItem('summarizeMode', mode)
+    } catch {
+      // localStorage unavailable - keep in-memory only
+    }
+    set({ summarizeMode: mode })
+  },
 
   // Settings
   showSettings: false,

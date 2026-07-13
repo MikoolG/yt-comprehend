@@ -41,12 +41,16 @@ export function Header() {
     setCurrentProgress(null)
 
     try {
-      await window.api.process.run({
+      const result = await window.api.process.run({
         url: url.trim(),
         tier,
         jsonProgress: true,
         summarize: summarizeMode === 'api'
       })
+      if (result && result.success === false) {
+        addProgressMessage(`Error: failed to start process: ${result.error ?? 'unknown'}`)
+        setIsProcessing(false)
+      }
     } catch (error) {
       addProgressMessage(`Error: ${error}`)
       setIsProcessing(false)
@@ -84,9 +88,13 @@ export function Header() {
 
 Save the summary to "${summaryPath}"`
 
+    // Single-quote for the shell so no interpolation ($, backticks) can occur;
+    // embedded single quotes become '\''
+    const shellQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
+
     // First send Ctrl+C to exit any running Claude session, then send the new command
     // Ctrl+C = \x03
-    const command = `claude "${claudePrompt.replace(/"/g, '\\"').replace(/\n/g, ' ')}"\n`
+    const command = `claude ${shellQuote(claudePrompt.replace(/\n/g, ' '))}\n`
 
     // Send Ctrl+C first, wait briefly, then send the command
     window.api.terminal.write('main', '\x03')
@@ -216,14 +224,18 @@ Save the summary to "${summaryPath}"`
         </label>
         <select
           id="tier"
-          value={tier}
-          onChange={(e) => setTier(Number(e.target.value) as 1 | 2 | 3)}
+          value={String(tier)}
+          onChange={(e) => {
+            const v = e.target.value
+            setTier(v === 'gemini' ? 'gemini' : (Number(v) as 1 | 2 | 3))
+          }}
           disabled={isProcessing}
-          className="w-32"
+          className="w-40"
         >
-          <option value={1}>1 - Captions</option>
-          <option value={2}>2 - Whisper</option>
-          <option value={3} disabled>
+          <option value="1">1 - Captions</option>
+          <option value="2">2 - Whisper</option>
+          <option value="gemini">Gemini (direct URL)</option>
+          <option value="3" disabled>
             3 - Visual (soon)
           </option>
         </select>

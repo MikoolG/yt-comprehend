@@ -1,7 +1,7 @@
 """Video content extractors for each tier."""
 
-from .captions import CaptionExtractor
 from .audio import AudioExtractor
+from .captions import CaptionExtractor
 
 __all__ = ["CaptionExtractor", "AudioExtractor"]
 

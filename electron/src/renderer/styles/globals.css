@@ -1,6 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+/* Tailwind 4: keep the existing JS config (custom colors) via @config */
+@config '../../../tailwind.config.js';
 
 :root {
   --editor-bg: #1e1e1e;

@@ -1,7 +1,7 @@
 import { IpcMain, BrowserWindow } from 'electron'
-import { readFile, writeFile, readdir, stat, mkdir } from 'fs/promises'
-import { join, relative, basename, extname } from 'path'
-import chokidar from 'chokidar'
+import { readFile, writeFile, readdir, mkdir } from 'fs/promises'
+import { join, extname } from 'path'
+import { watch, type FSWatcher } from 'chokidar'
 
 export interface FileNode {
   id: string
@@ -16,7 +16,7 @@ export interface FileEvent {
   path: string
 }
 
-let watcher: chokidar.FSWatcher | null = null
+let watcher: FSWatcher | null = null
 
 export function setupFileService(
   ipcMain: IpcMain,
@@ -51,7 +51,7 @@ export function setupFileService(
     const targetDir = dirPath || join(root, 'output')
 
     try {
-      const tree = await buildFileTree(targetDir, root)
+      const tree = await buildFileTree(targetDir)
       return { success: true, tree }
     } catch (error) {
       return { success: false, error: String(error), tree: [] }
@@ -75,7 +75,7 @@ export function setupFileService(
       // Directory may already exist
     }
 
-    watcher = chokidar.watch(targetDir, {
+    watcher = watch(targetDir, {
       persistent: true,
       ignoreInitial: true,
       depth: 10
@@ -109,10 +109,7 @@ export function setupFileService(
   })
 }
 
-async function buildFileTree(
-  dirPath: string,
-  projectRoot: string
-): Promise<FileNode[]> {
+async function buildFileTree(dirPath: string): Promise<FileNode[]> {
   const nodes: FileNode[] = []
 
   try {
@@ -127,10 +124,9 @@ async function buildFileTree(
 
     for (const entry of sorted) {
       const fullPath = join(dirPath, entry.name)
-      const relativePath = relative(projectRoot, fullPath)
 
       if (entry.isDirectory()) {
-        const children = await buildFileTree(fullPath, projectRoot)
+        const children = await buildFileTree(fullPath)
         nodes.push({
           id: fullPath,
           name: entry.name,

@@ -18,13 +18,11 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
+    "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/renderer/*"]
     }
   },
-  "include": ["src/renderer/**/*"],
-  "references": [
-    { "path": "./tsconfig.node.json" }
-  ]
+  "include": ["src/renderer/**/*", "src/preload/index.ts"]
 }

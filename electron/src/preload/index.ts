@@ -24,9 +24,10 @@ export interface ProgressEvent {
 
 export interface YtComprehendOptions {
   url: string
-  tier?: 1 | 2 | 3
+  tier?: 1 | 2 | 3 | 'gemini'
   model?: string
   device?: 'auto' | 'cpu' | 'cuda'
+  whisperBackend?: 'local' | 'groq'
   quiet?: boolean
   jsonProgress?: boolean
   summarize?: boolean
@@ -38,10 +39,11 @@ export interface CompletionResult {
 }
 
 export interface Config {
-  default_tier: number
+  default_tier: number | string
   auto_escalate: boolean
   whisper: {
     model: string
+    backend?: string
     device: string
     compute_type: string
     beam_size: number
@@ -163,7 +165,12 @@ const api = {
     get: (key: string) => ipcRenderer.invoke('config:get', key),
     set: (key: string, value: unknown) =>
       ipcRenderer.invoke('config:set', key, value),
-    save: (config: Config) => ipcRenderer.invoke('config:save', config)
+    save: (config: Config) => ipcRenderer.invoke('config:save', config),
+    // API keys go to the gitignored .env, never to config.yaml
+    setEnvKey: (envVar: string, value: string) =>
+      ipcRenderer.invoke('config:setEnvKey', envVar, value),
+    getEnvKeys: (): Promise<{ success: boolean; keys: string[] }> =>
+      ipcRenderer.invoke('config:getEnvKeys')
   },
 
   // App info

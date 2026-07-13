@@ -16,6 +16,7 @@ def check_dependencies():
         "rich": "rich",
         "yaml": "pyyaml",
         "google.genai": "google-genai",
+        "openai": "openai",
     }
     
     optional = {
@@ -44,15 +45,18 @@ def check_dependencies():
             print(f"  ○ {package} [not installed]")
             missing_optional.append(package)
     
-    # Check system tools
+    # Check system tools (deno is often at ~/.deno/bin, which may not be on PATH here)
     print("\nSystem tools:")
-    import subprocess
-    
+    import os
+    import shutil
+
+    deno_home = str(Path.home() / ".deno" / "bin")
+    search_path = os.environ.get("PATH", "") + os.pathsep + deno_home
+
     for tool in ["ffmpeg", "deno"]:
-        try:
-            subprocess.run([tool, "--version"], capture_output=True, check=True)
+        if shutil.which(tool, path=search_path):
             print(f"  ✓ {tool}")
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        else:
             print(f"  ✗ {tool} [REQUIRED]")
             if tool not in missing_required:
                 missing_required.append(tool)

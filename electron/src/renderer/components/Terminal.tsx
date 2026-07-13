@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { TerminalSquare, RefreshCw, Zap, Settings, Key, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../stores/app-store'
+import { getProviderInfo } from '../lib/providers'
 import '@xterm/xterm/css/xterm.css'
 
 const TERMINAL_ID = 'main'
@@ -16,12 +17,6 @@ export function Terminal() {
   const isCleaningUpRef = useRef(false)
   const cleanupRef = useRef<(() => void) | null>(null)
   const { terminalReady, setTerminalReady, summarizeMode, setSummarizeMode, setShowSettings, isProcessing, currentProgress } = useAppStore()
-
-  const PROVIDER_INFO: Record<string, { label: string; envVar: string; defaultModel: string }> = {
-    gemini: { label: 'Google Gemini', envVar: 'GEMINI_API_KEY', defaultModel: 'gemini-2.5-flash' },
-    openai: { label: 'OpenAI', envVar: 'OPENAI_API_KEY', defaultModel: 'gpt-4o-mini' },
-    anthropic: { label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', defaultModel: 'claude-sonnet-4-6' }
-  }
 
   const [providerName, setProviderName] = useState('gemini')
 
@@ -35,11 +30,7 @@ export function Terminal() {
     })
   }, [summarizeMode])
 
-  const info = PROVIDER_INFO[providerName] || {
-    label: providerName.charAt(0).toUpperCase() + providerName.slice(1),
-    envVar: `${providerName.toUpperCase()}_API_KEY`,
-    defaultModel: 'default'
-  }
+  const info = getProviderInfo(providerName)
 
   // Initialize terminal
   const initTerminal = useCallback(async () => {

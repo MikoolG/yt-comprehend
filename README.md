@@ -12,15 +12,21 @@ pip install -e .
 yt-comprehend "https://youtube.com/watch?v=VIDEO_ID"
 
 # Force specific tier
-yt-comprehend URL --tier 1  # Captions only (instant)
-yt-comprehend URL --tier 2  # Audio transcription (Whisper)
-yt-comprehend URL --tier 3  # Full visual analysis
+yt-comprehend URL --tier 1       # Captions only (instant; yt-dlp fallback if blocked)
+yt-comprehend URL --tier 2       # Audio transcription (Whisper)
+yt-comprehend URL --tier 3       # Full visual analysis
+yt-comprehend URL --tier gemini  # Send URL straight to Gemini (no download, free tier)
 
-# Auto-summarize via LLM API after extraction
-yt-comprehend URL --summarize               # Uses default provider (Gemini)
-yt-comprehend URL -s --provider openai      # Use OpenAI instead
-yt-comprehend URL -s --provider anthropic   # Use Anthropic
-yt-comprehend URL -s --api-key KEY          # Pass API key directly
+# Auto-summarize via LLM API after extraction (free-first)
+yt-comprehend URL --summarize                 # Default provider (Gemini free tier)
+yt-comprehend URL -s --provider openrouter    # OpenRouter free models
+yt-comprehend URL -s --provider ollama        # Local Ollama (private, unlimited)
+yt-comprehend URL -s --provider openai        # OpenAI (paid)
+yt-comprehend URL -s --provider anthropic     # Anthropic (paid)
+yt-comprehend URL -s --api-key KEY            # Pass API key directly
+
+# Tier 2 cloud transcription (free Groq Whisper API, needs GROQ_API_KEY)
+yt-comprehend URL --tier 2 --whisper-backend groq
 
 # Output options
 yt-comprehend URL --no-save        # Print to stdout only, don't save
@@ -49,7 +55,10 @@ output/
 ├── tier2-whisper/
 │   ├── transcripts/
 │   └── summaries/
-└── tier3-visual/
+├── tier3-visual/
+│   ├── transcripts/
+│   └── summaries/
+└── gemini-direct/
     ├── transcripts/
     └── summaries/
 ```
@@ -66,13 +75,21 @@ Extracts transcript and auto-summarizes in one step using an LLM API:
 yt-comprehend URL --summarize  # Gemini by default
 ```
 
-Supports multiple providers: **Gemini** (default), **OpenAI**, and **Anthropic**.
+Supported providers (free-first):
+- **Gemini** (default) - free tier, 1M-token context handles very long transcripts in one shot;
+  automatically falls back across free models (`gemini-flash-latest` → `gemini-2.5-flash` →
+  `gemini-2.5-flash-lite`) on overload/rate-limit
+- **OpenRouter** - rotating catalog of free models (`openrouter/free` auto-router)
+- **Ollama** - fully local and private via `http://localhost:11434` (try `gemma3` or `qwen3`)
+- **OpenAI** and **Anthropic** - bring your own paid key
 
 API key setup (pick one):
-- `.env` file in project root: `GEMINI_API_KEY=your-key` (or `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`)
+- `.env` file in project root: `GEMINI_API_KEY=your-key` (or `OPENROUTER_API_KEY`,
+  `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`) - recommended, gitignored
 - Environment variable in your shell
-- `config.yaml` under `summarize.api_key`
 - CLI flag: `--api-key KEY`
+
+The Settings UI writes keys to `.env` only - never into the git-tracked `config.yaml`.
 
 ### Claude Mode (interactive)
 
@@ -97,8 +114,8 @@ npm run build    # Production build
 
 ### Tech Stack
 
-- **Framework**: Electron 33+ with electron-vite
-- **Frontend**: React 18 + TypeScript + Tailwind CSS
+- **Framework**: Electron 43 with electron-vite 5 (Vite 7)
+- **Frontend**: React 19 + TypeScript + Tailwind CSS 4
 - **Editor**: Monaco Editor (VS Code's editor)
 - **Terminal**: xterm.js with node-pty
 - **State**: Zustand
@@ -144,9 +161,10 @@ npm run build    # Production build
 
 | Tier | Method | Speed | When to Use |
 |------|--------|-------|-------------|
-| 1 | YouTube Captions | Instant | Most videos, quick analysis |
-| 2 | faster-whisper | ~2× realtime | No captions, accuracy-critical |
+| 1 | YouTube Captions (+ yt-dlp fallback) | Instant | Most videos, quick analysis |
+| 2 | faster-whisper (batched) or Groq API | Fast | No captions, accuracy-critical |
 | 3 | Visual + Audio | Minutes | Slides, code, diagrams |
+| gemini | Gemini video understanding (URL only) | ~1 min | Zero local compute; free tier, ~8h video/day (preview) |
 
 ## Python API
 
@@ -166,9 +184,12 @@ See [docs/SETUP.md](docs/SETUP.md) for detailed installation and configuration i
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 - ffmpeg
-- Deno (for yt-dlp YouTube support)
+- Deno 2.3+ (for yt-dlp YouTube support)
+- Optional but recommended for reliable YouTube downloads:
+  `pip install bgutil-ytdlp-pot-provider` (PO-token provider plugin - yt-dlp
+  uses it automatically when its server is running; see docs/SETUP.md)
 
 For Tier 3 visual analysis:
 ```bash

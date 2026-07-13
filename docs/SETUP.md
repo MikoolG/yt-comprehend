@@ -4,20 +4,21 @@ This document provides complete setup instructions for the YT-Comprehend video a
 
 ## Overview
 
-YT-Comprehend is a tiered video comprehension system designed to extract content from online videos (primarily YouTube) for LLM consumption. It operates in three tiers of increasing depth:
+YT-Comprehend is a tiered video comprehension system designed to extract content from online videos (primarily YouTube) for LLM consumption. It operates in four tiers:
 
 | Tier | Method | Speed | Use Case |
 |------|--------|-------|----------|
-| **1 - Captions** | YouTube transcript API | Instant | Quick comprehension, most videos |
-| **2 - Audio** | yt-dlp + faster-whisper | ~2× realtime | No captions, accuracy-critical |
+| **1 - Captions** | YouTube transcript API (+ yt-dlp fallback) | Instant | Quick comprehension, most videos |
+| **2 - Audio** | yt-dlp + faster-whisper (batched) or Groq API | Fast | No captions, accuracy-critical |
 | **3 - Visual** | Scene detection + OCR + frames | Minutes | Slides, code, diagrams, full context |
+| **gemini** | Gemini video understanding (URL only) | ~1 min | Zero local compute; free tier, preview |
 
 ## System Requirements
 
 - **OS**: Ubuntu 24.04 (tested), Linux generally
 - **RAM**: 8GB minimum, 16GB+ recommended for Tier 2/3
 - **Storage**: 2GB for models, temp space for video processing
-- **Python**: 3.10+
+- **Python**: 3.11+
 - **GPU**: Optional but improves Tier 2/3 significantly
 
 ## Environment Setup
@@ -29,7 +30,7 @@ YT-Comprehend is a tiered video comprehension system designed to extract content
 sudo apt update
 sudo apt install -y ffmpeg python3-pip python3-venv git
 
-# Deno runtime (required for yt-dlp YouTube support as of 2025)
+# Deno runtime 2.3+ (required for yt-dlp YouTube support)
 curl -fsSL https://deno.land/install.sh | sh
 # Add to PATH: export DENO_INSTALL="$HOME/.deno" && export PATH="$DENO_INSTALL/bin:$PATH"
 # Add the above to ~/.bashrc or ~/.zshrc
@@ -37,6 +38,26 @@ curl -fsSL https://deno.land/install.sh | sh
 # For Tier 3 visual analysis (optional initially)
 sudo apt install -y libgl1-mesa-glx libglib2.0-0
 ```
+
+### 1b. PO-Token Provider (recommended for reliable YouTube downloads)
+
+Since ~2025 YouTube requires "PO tokens" for many downloads; without one,
+yt-dlp can intermittently fail with `403` / `PO Token Required` errors.
+The `bgutil-ytdlp-pot-provider` plugin generates them automatically:
+
+```bash
+# Inside the project venv
+pip install bgutil-ytdlp-pot-provider
+
+# Run the provider's token server (Docker, recommended - listens on 127.0.0.1:4416)
+docker run --name bgutil-provider -d -p 4416:4416 --restart unless-stopped \
+  brainicism/bgutil-ytdlp-pot-provider
+
+# yt-dlp auto-detects the running server; no extra flags needed.
+```
+
+yt-comprehend also retries failed downloads once after self-updating yt-dlp,
+which fixes most breakages caused by YouTube-side changes.
 
 ### 2. Project Setup
 
@@ -89,9 +110,9 @@ yt-comprehend/
 
 ```
 # Core
-youtube-transcript-api>=0.6.2
-yt-dlp>=2024.12.1
-faster-whisper>=1.0.0
+youtube-transcript-api>=1.2.4
+yt-dlp>=2026.7.4
+faster-whisper>=1.2.0
 
 # CLI
 click>=8.1.0
@@ -99,6 +120,10 @@ rich>=13.0.0
 
 # Configuration
 pyyaml>=6.0
+
+# Summarization / OpenAI-compatible providers + Groq whisper backend
+google-genai>=2.0.0,<3
+openai>=1.60.0
 
 # Tier 3 - Visual Analysis (install separately if needed)
 # scenedetect[opencv]>=0.6.4
@@ -132,12 +157,13 @@ pip install imagededup pillow
 ```yaml
 # YT-Comprehend Configuration
 
-# Default tier to use (1, 2, or 3)
+# Default tier to use (1, 2, 3, or "gemini")
 default_tier: 1
 
 # Whisper settings (Tier 2)
 whisper:
-  model: "medium"           # tiny, small, medium, large-v3, large-v3-turbo
+  model: "large-v3-turbo"   # tiny, small, medium, large-v3, large-v3-turbo, distil-large-v3.5
+  backend: "local"          # local (faster-whisper) or groq (free cloud API, GROQ_API_KEY)
   device: "auto"            # auto, cpu, cuda
   compute_type: "int8"      # int8, float16, float32
   beam_size: 5
@@ -177,9 +203,17 @@ source venv/bin/activate
 yt-comprehend "https://youtube.com/watch?v=VIDEO_ID"
 
 # Force specific tier
-yt-comprehend "https://youtube.com/watch?v=VIDEO_ID" --tier 1  # Captions only
-yt-comprehend "https://youtube.com/watch?v=VIDEO_ID" --tier 2  # Audio transcription
-yt-comprehend "https://youtube.com/watch?v=VIDEO_ID" --tier 3  # Full visual analysis
+yt-comprehend "https://youtube.com/watch?v=VIDEO_ID" --tier 1       # Captions only
+yt-comprehend "https://youtube.com/watch?v=VIDEO_ID" --tier 2       # Audio transcription
+yt-comprehend "https://youtube.com/watch?v=VIDEO_ID" --tier 3       # Full visual analysis
+yt-comprehend "https://youtube.com/watch?v=VIDEO_ID" --tier gemini  # Gemini direct URL (no download)
+
+# Summarization (free-first: gemini default; openrouter, ollama, openai, anthropic)
+yt-comprehend URL --summarize
+yt-comprehend URL -s --provider ollama
+
+# Tier 2 via free Groq cloud Whisper (needs GROQ_API_KEY in .env)
+yt-comprehend URL --tier 2 --whisper-backend groq
 
 # Output options
 yt-comprehend URL --no-save           # Print to stdout only, don't save to file
@@ -209,7 +243,10 @@ output/
 ├── tier2-whisper/
 │   ├── transcripts/
 │   └── summaries/
-└── tier3-visual/
+├── tier3-visual/
+│   ├── transcripts/
+│   └── summaries/
+└── gemini-direct/
     ├── transcripts/
     └── summaries/
 ```
@@ -248,15 +285,21 @@ Uses `youtube-transcript-api` to fetch existing captions directly from YouTube. 
 - Private/age-restricted video
 - Live stream without captions
 - Very new upload (captions not yet generated)
+- YouTube blocks the transcript API (bot detection) - yt-comprehend then
+  automatically retries via yt-dlp subtitle download before escalating to Tier 2
 
 ### Tier 2: Audio Transcription
 
-Downloads audio track only (not full video) via `yt-dlp`, transcribes with `faster-whisper`.
+Downloads audio track only (not full video) via `yt-dlp`, transcribes with
+`faster-whisper` using batched inference (default model `large-v3-turbo`,
+~1.6GB download on first use). Alternatively, set `whisper.backend: groq` to
+use Groq's free Whisper API instead of local compute.
 
-**Resource usage** (medium model, int8, CPU):
-- Memory: ~2GB
-- Speed: ~2× realtime (30min video ≈ 15min processing)
-- Disk: 50-150MB audio file (temporary)
+**Resource usage** (large-v3-turbo, int8, CPU):
+- Memory: ~3GB
+- Speed: roughly realtime or faster with batching (CPU-dependent)
+- Disk: 10-50MB opus audio file (temporary)
+- For low-end CPUs, use `--model distil-large-v3.5` (English) or `--model small`
 
 **GPU acceleration** (if available):
 - Memory: ~4GB VRAM
@@ -299,9 +342,9 @@ If still failing, ensure Deno is installed and in PATH.
 
 Models download from Hugging Face. If network issues:
 ```bash
-# Manual download
+# Manual download (default model)
 pip install huggingface-hub
-huggingface-cli download Systran/faster-whisper-medium --local-dir ~/.cache/huggingface/hub/models--Systran--faster-whisper-medium
+huggingface-cli download Systran/faster-whisper-large-v3-turbo --local-dir ~/.cache/huggingface/hub/models--Systran--faster-whisper-large-v3-turbo
 ```
 
 ### Out of memory (Tier 2)
@@ -359,7 +402,7 @@ The project includes an Electron-based desktop application for a graphical workf
 
 ### Prerequisites
 
-- Node.js 18+ and npm
+- Node.js 22+ and npm
 - Python environment already set up (see above)
 
 ### Installation
@@ -385,16 +428,16 @@ This starts:
 npm run build
 ```
 
-Built files are output to `electron/dist/`.
+Built files are output to `electron/out/` (use `npm run package` for distributables).
 
 ### Tech Stack
 
 | Component | Technology |
 |-----------|------------|
-| Framework | Electron 33+ |
-| Bundler | electron-vite |
-| Frontend | React 18 + TypeScript |
-| Styling | Tailwind CSS |
+| Framework | Electron 43 |
+| Bundler | electron-vite 5 (Vite 7) |
+| Frontend | React 19 + TypeScript |
+| Styling | Tailwind CSS 4 |
 | State | Zustand |
 | Terminal | xterm.js + node-pty |
 | Editor | Monaco Editor |

@@ -8,14 +8,15 @@ from pathlib import Path
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
 
 # Add src to path for development
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.comprehend import VideoComprehend, ComprehendResult
-from src.extractors.captions import CaptionExtractionError
+from src.comprehend import VideoComprehend
 from src.extractors.audio import AudioExtractionError
+from src.extractors.captions import CaptionExtractionError
+from src.extractors.gemini_video import GeminiVideoError
+from src.summarize import SummarizationError, summarize_file
 
 console = Console()
 
@@ -71,14 +72,16 @@ def make_json_progress_callback():
     """Create a progress callback that emits JSON events."""
     stage_progress = {
         "Trying caption extraction": ("caption", 10),
+        "yt-dlp caption fallback": ("caption", 15),
         "Captions unavailable": ("caption", 20),
         "Escalating to Tier 2": ("escalate", 25),
         "Starting audio transcription": ("transcribe", 30),
         "Downloading audio": ("download", 40),
-        "Transcribing with Whisper": ("transcribe", 60),
+        "Transcribing with": ("transcribe", 60),
         "Audio transcription failed": ("transcribe", 70),
         "Escalating to Tier 3": ("escalate", 75),
         "Starting full visual analysis": ("visual", 80),
+        "Sending video URL to Gemini": ("gemini", 40),
     }
 
     def callback(message: str):
@@ -101,9 +104,10 @@ def make_json_progress_callback():
 @click.argument("url")
 @click.option(
     "--tier", "-t",
-    type=click.IntRange(1, 3),
+    type=click.Choice(["1", "2", "3", "gemini"]),
     default=None,
-    help="Force specific analysis tier (1=captions, 2=audio, 3=visual)"
+    help="Analysis tier (1=captions, 2=audio, 3=visual, gemini=direct URL via Gemini API, "
+         "free tier, preview, ~8h video/day)"
 )
 @click.option(
     "--no-escalate",
@@ -121,6 +125,12 @@ def make_json_progress_callback():
     type=click.Choice(["auto", "cpu", "cuda"]),
     default=None,
     help="Device for Whisper inference"
+)
+@click.option(
+    "--whisper-backend",
+    type=click.Choice(["local", "groq"]),
+    default=None,
+    help="Tier 2 transcription backend (local=faster-whisper, groq=free cloud Whisper API)"
 )
 @click.option(
     "--prompt", "-p",
@@ -185,7 +195,7 @@ def make_json_progress_callback():
 @click.option(
     "--provider",
     default=None,
-    help="LLM provider for summarization (gemini, openai, anthropic)"
+    help="LLM provider for summarization (gemini, openrouter, ollama, openai, anthropic)"
 )
 @click.option(
     "--api-key",
@@ -199,10 +209,11 @@ def make_json_progress_callback():
 )
 def main(
     url: str,
-    tier: int | None,
+    tier: str | None,
     no_escalate: bool,
     model: str | None,
     device: str | None,
+    whisper_backend: str | None,
     prompt: str | None,
     output: str | None,
     no_save: bool,
@@ -219,15 +230,15 @@ def main(
 ):
     """
     Extract video content for LLM consumption.
-    
+
     URL can be a YouTube URL or video ID.
-    
+
     Examples:
-    
+
         yt-comprehend "https://youtube.com/watch?v=VIDEO_ID"
-        
+
         yt-comprehend VIDEO_ID --tier 2 --model large-v3
-        
+
         yt-comprehend URL -o transcript.md --format markdown
     """
     # Find config file
@@ -238,18 +249,34 @@ def main(
             if candidate.exists():
                 config_path = str(candidate)
                 break
-    
+
     # Initialize engine
     vc = VideoComprehend(config_path=config_path)
-    
+
     # Override config with CLI options
     if model:
         vc.config["whisper"]["model"] = model
     if device:
         vc.config["whisper"]["device"] = device
+    if whisper_backend:
+        vc.config["whisper"]["backend"] = whisper_backend
     if prompt:
         vc.config["whisper"]["initial_prompt"] = prompt
-    
+    if api_key and not vc.config.get("summarize", {}).get("api_key"):
+        vc.config.setdefault("summarize", {})["api_key"] = api_key
+
+    # Normalize tier: "1"/"2"/"3" -> int, "gemini" stays a string
+    resolved_tier = None
+    if tier is not None:
+        resolved_tier = tier if tier == "gemini" else int(tier)
+
+    if summarize and no_save:
+        message = "--summarize requires a saved transcript; ignoring because --no-save was passed"
+        if json_progress:
+            json_progress_event("warning", message, -1)
+        else:
+            console.print(f"[yellow]Warning:[/yellow] {message}")
+
     # Progress callback
     if json_progress:
         callback = make_json_progress_callback()
@@ -263,24 +290,23 @@ def main(
         if not quiet and not json_progress:
             console.print(f"[bold]Analyzing:[/bold] {url}")
             console.print()
-        
+
         result = vc.analyze(
             url=url,
-            tier=tier,
+            tier=resolved_tier,
             auto_escalate=not no_escalate,
             progress_callback=callback,
         )
-        
+
         if json_progress:
             json_progress_event("analyzed", f"Analysis complete (Tier {result.metadata.tier_used})", 90)
         elif not quiet:
             console.print()
             console.print(f"[green]✓[/green] Analysis complete (Tier {result.metadata.tier_used})")
             console.print()
-        
+
         # Format output
         if output_format == "json":
-            import json
             output_text = json.dumps({
                 "metadata": {
                     "url": result.metadata.url,
@@ -305,7 +331,7 @@ def main(
                 include_timestamps=not no_timestamps,
                 timestamp_interval=interval,
             )
-        
+
         # Determine output path (save by default unless --no-save)
         output_path = None
         if output:
@@ -316,6 +342,7 @@ def main(
                 1: "tier1-captions",
                 2: "tier2-whisper",
                 3: "tier3-visual",
+                "gemini": "gemini-direct",
             }
             tier_dir = tier_dirs.get(result.metadata.tier_used, "tier1-captions")
 
@@ -351,8 +378,6 @@ def main(
         # Summarize via LLM API if requested
         if summarize and output_path:
             try:
-                from src.summarize import summarize_file, SummarizationError
-
                 if json_progress:
                     json_progress_event("summarize", "Starting API summarization...", 92)
 
@@ -397,12 +422,18 @@ def main(
         # Print to stdout (unless quiet or explicit -o file specified or json_progress)
         if not quiet and not output and not json_progress:
             print(output_text)
-    
+
     except CaptionExtractionError as e:
         if json_progress:
             json_progress_event("error", f"Caption extraction failed: {e}", -1)
         else:
             console.print(f"[red]Caption extraction failed:[/red] {e}")
+        sys.exit(1)
+    except GeminiVideoError as e:
+        if json_progress:
+            json_progress_event("error", f"Gemini video analysis failed: {e}", -1)
+        else:
+            console.print(f"[red]Gemini video analysis failed:[/red] {e}")
         sys.exit(1)
     except AudioExtractionError as e:
         if json_progress:

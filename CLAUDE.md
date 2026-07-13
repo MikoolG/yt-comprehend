@@ -11,11 +11,12 @@ export PATH="$HOME/.deno/bin:$PATH"
 
 ## Project Overview
 
-YT-Comprehend is a tiered video comprehension system for extracting content from YouTube videos for LLM consumption. It operates in three tiers of increasing depth:
+YT-Comprehend is a tiered video comprehension system for extracting content from YouTube videos for LLM consumption. It operates in four tiers:
 
-- **Tier 1 (Captions)**: YouTube transcript API - instant, works for most videos
-- **Tier 2 (Audio)**: yt-dlp + faster-whisper transcription - more accurate, ~2× realtime
+- **Tier 1 (Captions)**: YouTube transcript API - instant; falls back to yt-dlp subtitle download if YouTube blocks the API (`RequestBlocked`/`PoTokenRequired`)
+- **Tier 2 (Audio)**: yt-dlp audio download + faster-whisper batched transcription (default model `large-v3-turbo`); optional `groq` backend uses Groq's free Whisper API instead of local compute
 - **Tier 3 (Visual)**: Scene detection + OCR + frame analysis - for slides, code, diagrams
+- **Tier "gemini" (Direct URL)**: Sends the YouTube URL straight to the Gemini API's video understanding (free tier, ~8h video/day, preview) - no download, no local compute
 
 ## Build/Install
 
@@ -38,14 +39,17 @@ black src/
 yt-comprehend URL                    # Auto-selects best tier, saves to output/
 yt-comprehend URL --tier 2           # Force Whisper transcription
 yt-comprehend URL --tier 2 --model large-v3-turbo --device cuda
+yt-comprehend URL --tier 2 --whisper-backend groq  # Free cloud Whisper (GROQ_API_KEY)
+yt-comprehend URL --tier gemini      # Zero-download Gemini direct video analysis
 yt-comprehend URL --no-save          # Print to stdout only
 yt-comprehend URL --quiet            # Save only, no stdout output
 yt-comprehend URL -o out.md          # Save to specific file
 yt-comprehend URL --json-progress    # JSON progress events for UI integration
 yt-comprehend URL --summarize        # Auto-summarize via LLM API after extraction
 yt-comprehend URL -s --api-key KEY   # Summarize with explicit API key
-yt-comprehend URL -s --provider openai --summarize-model gpt-4o  # Use a different provider
-yt-comprehend URL -s --provider anthropic  # Use Anthropic
+yt-comprehend URL -s --provider openrouter   # OpenRouter free models
+yt-comprehend URL -s --provider ollama       # Local Ollama (no key needed)
+yt-comprehend URL -s --provider anthropic    # Anthropic (paid)
 ```
 
 ## Desktop UI
@@ -85,8 +89,11 @@ npm run build            # Build for production
 
 For API summarization mode, set the provider API key via one of:
 - **`.env` file** in project root (e.g. `GEMINI_API_KEY=...`) - recommended
-- **Settings UI** (gear icon → Summarization section)
+- **Settings UI** (gear icon → Summarization section) - writes to `.env`, never to config.yaml
 - **Environment variable** in your shell
+
+Env vars: `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+`GROQ_API_KEY` (for the Groq whisper backend). Ollama needs no key.
 
 ### Keyboard Shortcuts
 
@@ -105,7 +112,10 @@ output/
 ├── tier2-whisper/
 │   ├── transcripts/
 │   └── summaries/
-└── tier3-visual/
+├── tier3-visual/
+│   ├── transcripts/
+│   └── summaries/
+└── gemini-direct/
     ├── transcripts/
     └── summaries/
 ```
@@ -137,24 +147,26 @@ When asked to analyze a YouTube video:
 
 - **`src/cli.py`**: CLI entry point, handles arguments and output saving
 - **`src/comprehend.py`**: `VideoComprehend` orchestrates tiers, auto-escalates on failure, returns `ComprehendResult`
-- **`src/summarize.py`**: Provider-agnostic LLM summarization (Gemini, OpenAI, Anthropic) with factory pattern
-- **`src/extractors/captions.py`**: Tier 1 - uses `youtube-transcript-api` v1.x (`.list()` / `.fetch()`)
-- **`src/extractors/audio.py`**: Tier 2 - yt-dlp download + faster-whisper (lazy-loaded model)
+- **`src/summarize.py`**: Provider-agnostic LLM summarization. Native `google-genai` path for Gemini (with free-model fallback chain) + one OpenAI-compatible adapter (base_url map) covering openai/openrouter/ollama + native Anthropic path
+- **`src/extractors/captions.py`**: Tier 1 - `youtube-transcript-api` v1.x (`.list()` / `.fetch()`) + `YtDlpCaptionExtractor` fallback (yt-dlp `--write-auto-subs` → VTT parsing)
+- **`src/extractors/audio.py`**: Tier 2 - yt-dlp opus download + faster-whisper `BatchedInferencePipeline` (or Groq cloud backend)
+- **`src/extractors/gemini_video.py`**: Gemini direct-URL tier (video understanding, no download)
 - **`src/extractors/visual.py`**: Tier 3 - scene detection → frame extraction → dedup → OCR
+- **`src/utils.py`**: Shared `format_time` / timestamp-interval grouping helpers
 - **`config.yaml`**: Default settings for whisper, visual, output, summarize. CLI options override.
 
 ### Electron UI
 
 **Tech Stack:**
-- Electron 33+ with electron-vite bundler
-- React 18 + TypeScript
-- Tailwind CSS for styling
+- Electron 43 with electron-vite 5 (Vite 7) bundler
+- React 19 + TypeScript
+- Tailwind CSS 4 (`@tailwindcss/postcss`; JS config kept via `@config` in globals.css)
 - Zustand for state management
 - Monaco Editor (local bundle, not CDN)
 - xterm.js + node-pty for terminal
-- react-resizable-panels for layout
+- react-resizable-panels v4 (`Group`/`Panel`/`Separator` API)
 - react-arborist for file tree
-- chokidar for file watching
+- chokidar 5 for file watching (named imports: `import { watch } from 'chokidar'`)
 
 **Main Process (`electron/src/main/`):**
 - `index.ts`: Window management, app lifecycle, context menu
@@ -179,10 +191,13 @@ When asked to analyze a YouTube video:
 
 ## Notes
 
-- `youtube-transcript-api` v1.x API: use `api.list(video_id)` not `api.list_transcripts()`
-- System deps: ffmpeg, deno (required by yt-dlp for YouTube as of 2025)
+- `youtube-transcript-api` v1.x API: use `api.list(video_id)` not `api.list_transcripts()`; blocked-request errors (`RequestBlocked`, `IpBlocked`, `PoTokenRequired`, `AgeRestricted`) trigger the yt-dlp caption fallback
+- System deps: ffmpeg, deno 2.3+ (required by yt-dlp for YouTube)
+- For reliable YouTube downloads, the optional `bgutil-ytdlp-pot-provider` plugin supplies PO tokens (yt-dlp auto-detects its server); see docs/SETUP.md
 - Tier 3 requires `[visual]` extra for scenedetect, paddleocr, imagededup
 - Output directory can be configured in `config.yaml` under `output.directory`
-- API key resolution: `--api-key` flag > provider env var (e.g. `GEMINI_API_KEY`) > `config.yaml` `summarize.api_key`
-- Summarization supports multiple providers: gemini (default), openai, anthropic
+- API key resolution: `--api-key` flag > provider env var (e.g. `GEMINI_API_KEY`) > `config.yaml` `summarize.api_key` (config keys discouraged; the Settings UI writes only to `.env`)
+- Summarization providers: gemini (default, free tier), openrouter (free models), ollama (local), openai, anthropic. Provider defaults live in `src/summarize.py` `PROVIDERS` and are mirrored in `electron/src/renderer/lib/providers.ts` - keep both in sync
+- Gemini calls fall back across `gemini-flash-latest` → `gemini-2.5-flash` → `gemini-2.5-flash-lite` on 429/503
 - Provider is configurable via `--provider` flag or `config.yaml` `summarize.provider`
+- Python 3.11+ required (yt-dlp floor)

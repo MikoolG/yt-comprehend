@@ -7,9 +7,10 @@ import { parse } from 'yaml'
 
 export interface YtComprehendOptions {
   url: string
-  tier?: 1 | 2 | 3
+  tier?: 1 | 2 | 3 | 'gemini'
   model?: string
   device?: 'auto' | 'cpu' | 'cuda'
+  whisperBackend?: 'local' | 'groq'
   quiet?: boolean
   jsonProgress?: boolean
   summarize?: boolean
@@ -50,6 +51,9 @@ export function setupProcessService(
     }
     if (options.device) {
       args.push('--device', options.device)
+    }
+    if (options.whisperBackend) {
+      args.push('--whisper-backend', options.whisperBackend)
     }
     if (options.quiet) {
       args.push('--quiet')
